@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: msdev-postgres
+    restart: unless-stopped
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_USER: msdev
+      POSTGRES_PASSWORD: msdev
+      POSTGRES_DB: outsourcing_db
+    volumes:
+      - msdev_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U msdev -d outsourcing_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  msdev_pgdata:

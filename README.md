@@ -1,36 +1,79 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Outsourcing Governance Portal
 
-## Getting Started
+Local-first Next.js 14 app for capacity, timesheets, overtime approvals, evaluations, and scope swaps.
 
-First, run the development server:
+## Stack
+
+- Next.js 14 (App Router, Server Actions)
+- TypeScript, Tailwind CSS, Shadcn-style UI
+- PostgreSQL (local Docker) + Prisma
+- NextAuth.js (credentials + RBAC)
+- Zod + Sonner
+
+## Modules
+
+| Route | Feature |
+| --- | --- |
+| `/capacity` | Weekly capacity dashboard |
+| `/timesheets` | Timesheet logging (16h/day, 50h/week) |
+| `/overtime` | OT pre-approval workflow |
+| `/evaluations` | Monthly scorecard + replacement ticket |
+| `/scope-swaps` | 1-in / 1-out scope swap |
+| `/integrations` | Email, SMTP, Jira, ServiceNow config cards |
+
+## Local setup
+
+### 1. Start PostgreSQL
+
+```bash
+docker compose up -d
+```
+
+### 2. Install & migrate
+
+```bash
+cp .env.example .env
+npm install
+npx prisma db push
+npm run db:seed
+```
+
+### 3. Run the app
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Seed logins
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Email | Role | Password |
+| --- | --- | --- |
+| `pm@acme.example` | CLIENT_PM | `password123` |
+| `developer@acme.example` | DEVELOPER | `password123` |
+| `admin@acme.example` | SYS_ADMIN | `password123` |
+| `lead@acme.example` | VENDOR_LEAD | `password123` |
 
-## Learn More
+## Useful commands
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+docker compose up -d      # start local Postgres on :5434
+docker compose down       # stop Postgres
+npm run db:up             # alias for docker compose up -d
+npm run db:push           # sync schema
+npm run db:seed           # seed demo data
+npm run dev               # Next.js on :3000
+npm run lint
+npm run build             # local production build check
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Business rules
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- Daily max: **16h** · Weekly warning **45h** · Hard cap **50h**
+- Overtime requires client pre-approval
+- Evaluation weights: Code 30% · Delivery 25% · Tech 20% · Comm 15% · Prof 10%
+- Score **< 2.80** → replacement ticket (SLA 10 working days)
+- Scope swap: equal story points + hours (1-in, 1-out)
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+> Deploy (Vercel/Neon) ditunda — development dulu di local laptop.

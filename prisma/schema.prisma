@@ -1,0 +1,271 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  SYS_ADMIN
+  CLIENT_PM
+  VENDOR_LEAD
+  VENDOR_AM
+  DEVELOPER
+}
+
+enum OvertimeStatus {
+  PENDING
+  APPROVED_CLIENT
+  REJECTED_CLIENT
+}
+
+enum ReplacementStatus {
+  OPEN
+  IN_PROGRESS
+  FULFILLED
+  CANCELLED
+}
+
+enum ScopeSwapStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COMPLETED
+}
+
+enum IntegrationProvider {
+  EMAIL
+  SMTP
+  JIRA
+  SERVICENOW
+}
+
+enum IntegrationTestStatus {
+  NEVER
+  SUCCESS
+  FAILED
+}
+
+model Client {
+  id          String       @id @default(cuid())
+  name        String
+  code        String       @unique
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  users       User[]
+  developers  Developer[]
+  projects    Project[]
+  evaluations MonthlyEvaluation[]
+  scopeSwaps  ScopeSwap[]
+  replacements ReplacementTicket[]
+}
+
+model User {
+  id             String     @id @default(cuid())
+  email          String     @unique
+  name           String
+  passwordHash   String?
+  role           Role
+  clientId       String?
+  client         Client?    @relation(fields: [clientId], references: [id])
+  developer      Developer?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  accounts       Account[]
+  sessions       Session[]
+  evaluationsAsPm MonthlyEvaluation[] @relation("EvaluatedBy")
+  scopeSwapsRequested ScopeSwap[] @relation("ScopeSwapRequester")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Developer {
+  id               String              @id @default(cuid())
+  userId           String              @unique
+  user             User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId         String
+  client           Client              @relation(fields: [clientId], references: [id])
+  hourlyRate       Decimal             @db.Decimal(10, 2)
+  standardCapacity Decimal             @default(40) @db.Decimal(5, 2)
+  skillTags        String[]
+  isActive         Boolean             @default(true)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  timesheets       Timesheet[]
+  overtimeRequests OvertimeRequest[]
+  evaluations      MonthlyEvaluation[]
+  replacementsAsOutgoing ReplacementTicket[] @relation("OutgoingDeveloper")
+  replacementsAsIncoming ReplacementTicket[] @relation("IncomingDeveloper")
+  scopeSwapsIn     ScopeSwap[]         @relation("ScopeSwapIn")
+  scopeSwapsOut    ScopeSwap[]         @relation("ScopeSwapOut")
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id])
+  name        String
+  code        String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  timesheets  Timesheet[]
+  scopeSwaps  ScopeSwap[]
+
+  @@unique([clientId, code])
+}
+
+model Timesheet {
+  id           String   @id @default(cuid())
+  developerId  String
+  developer    Developer @relation(fields: [developerId], references: [id])
+  projectId    String
+  project      Project  @relation(fields: [projectId], references: [id])
+  workDate     DateTime @db.Date
+  hours        Decimal  @db.Decimal(4, 2)
+  taskSummary  String
+  isOvertime   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([developerId, workDate])
+  @@index([workDate])
+}
+
+model OvertimeRequest {
+  id           String         @id @default(cuid())
+  developerId  String
+  developer    Developer      @relation(fields: [developerId], references: [id])
+  workDate     DateTime       @db.Date
+  requestedHours Decimal      @db.Decimal(4, 2)
+  reason       String
+  status       OvertimeStatus @default(PENDING)
+  reviewedAt   DateTime?
+  reviewNote   String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([developerId, status])
+}
+
+model MonthlyEvaluation {
+  id            String   @id @default(cuid())
+  developerId   String
+  developer     Developer @relation(fields: [developerId], references: [id])
+  clientId      String
+  client        Client   @relation(fields: [clientId], references: [id])
+  evaluatedById String
+  evaluatedBy   User     @relation("EvaluatedBy", fields: [evaluatedById], references: [id])
+  year          Int
+  month         Int
+  codeQuality   Decimal  @db.Decimal(3, 2)
+  delivery      Decimal  @db.Decimal(3, 2)
+  technical     Decimal  @db.Decimal(3, 2)
+  communication Decimal  @db.Decimal(3, 2)
+  professionalism Decimal @db.Decimal(3, 2)
+  totalScore    Decimal  @db.Decimal(4, 2)
+  comments      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  replacementTicket ReplacementTicket?
+
+  @@unique([developerId, year, month])
+  @@index([clientId, year, month])
+}
+
+model ReplacementTicket {
+  id                   String            @id @default(cuid())
+  evaluationId         String            @unique
+  evaluation           MonthlyEvaluation @relation(fields: [evaluationId], references: [id])
+  clientId             String
+  client               Client            @relation(fields: [clientId], references: [id])
+  outgoingDeveloperId  String
+  outgoingDeveloper    Developer         @relation("OutgoingDeveloper", fields: [outgoingDeveloperId], references: [id])
+  incomingDeveloperId  String?
+  incomingDeveloper    Developer?        @relation("IncomingDeveloper", fields: [incomingDeveloperId], references: [id])
+  status               ReplacementStatus @default(OPEN)
+  slaTargetDays        Int               @default(10)
+  slaDueDate           DateTime
+  triggerScore         Decimal           @db.Decimal(4, 2)
+  notes                String?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  @@index([status, slaDueDate])
+}
+
+model ScopeSwap {
+  id                 String          @id @default(cuid())
+  clientId           String
+  client             Client          @relation(fields: [clientId], references: [id])
+  projectId          String
+  project            Project         @relation(fields: [projectId], references: [id])
+  requestedById      String
+  requestedBy        User            @relation("ScopeSwapRequester", fields: [requestedById], references: [id])
+  outDeveloperId     String
+  outDeveloper       Developer       @relation("ScopeSwapOut", fields: [outDeveloperId], references: [id])
+  inDeveloperId      String
+  inDeveloper        Developer       @relation("ScopeSwapIn", fields: [inDeveloperId], references: [id])
+  outStoryPoints     Decimal         @db.Decimal(6, 2)
+  inStoryPoints      Decimal         @db.Decimal(6, 2)
+  outHours           Decimal         @db.Decimal(6, 2)
+  inHours            Decimal         @db.Decimal(6, 2)
+  outTaskDescription String
+  inTaskDescription  String
+  status             ScopeSwapStatus @default(PENDING)
+  rationale          String
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  @@index([clientId, status])
+}
+
+model IntegrationConfig {
+  id              String                @id @default(cuid())
+  provider        IntegrationProvider   @unique
+  enabled         Boolean               @default(false)
+  displayName     String
+  description     String
+  config          Json
+  lastTestedAt    DateTime?
+  lastTestStatus  IntegrationTestStatus @default(NEVER)
+  lastTestMessage String?
+  updatedById     String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+}

@@ -3,25 +3,39 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --background: #f1f5f9;
+  --foreground: #0f172a;
+  --surface: #ffffff;
+  --border: #e2e8f0;
+  --muted: #64748b;
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
 }
 
 body {
   color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  background:
+    radial-gradient(1200px 400px at 0% -10%, #e2e8f0 0%, transparent 55%),
+    var(--background);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+
+  .page-stack {
+    @apply space-y-4;
+  }
+
+  .page-title {
+    @apply text-xl font-semibold tracking-tight text-slate-900 sm:text-[1.35rem];
+  }
+
+  .page-subtitle {
+    @apply mt-0.5 text-[12px] leading-snug text-slate-500;
   }
 }
