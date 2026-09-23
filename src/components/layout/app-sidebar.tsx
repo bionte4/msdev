@@ -12,6 +12,7 @@ import {
   Plug,
   Users,
   GraduationCap,
+  FolderKanban,
   Menu,
   X,
   LogOut,
@@ -24,6 +25,7 @@ import { Button } from "@/components/ui/button";
 
 const NAV_ITEMS = [
   { href: "/capacity", label: "Capacity", icon: LayoutDashboard },
+  { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/personnel", label: "Personnel", icon: Users },
   { href: "/development", label: "Development", icon: GraduationCap },
   { href: "/timesheets", label: "Timesheets", icon: Clock },
