@@ -15,7 +15,9 @@ Local-first Next.js 14 app for capacity, timesheets, overtime approvals, evaluat
 | Route | Feature |
 | --- | --- |
 | `/capacity` | Weekly capacity dashboard |
-| `/timesheets` | Timesheet logging (16h/day, 50h/week) |
+| `/personnel` | Developer roster + leave (cuti/sakit) CRUD |
+| `/development` | Skillset · training · coaching · reward/punishment |
+| `/timesheets` | Timesheet CRUD with RBAC |
 | `/overtime` | OT pre-approval workflow |
 | `/evaluations` | Monthly scorecard + replacement ticket |
 | `/scope-swaps` | 1-in / 1-out scope swap |

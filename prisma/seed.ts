@@ -63,6 +63,7 @@ async function main() {
           clientId: client.id,
           hourlyRate: 45,
           standardCapacity: 40,
+          jobTitle: "Software Developer",
           isActive: true,
         },
         create: {
@@ -70,11 +71,202 @@ async function main() {
           clientId: client.id,
           hourlyRate: 45,
           standardCapacity: 40,
+          jobTitle: "Software Developer",
+          startDate: new Date(),
           skillTags: ["TypeScript", "React"],
           isActive: true,
         },
       });
     }
+  }
+
+  const alex = await prisma.developer.findFirst({
+    where: { user: { email: "developer@acme.example" } },
+  });
+  const jordan = await prisma.developer.findFirst({
+    where: { user: { email: "dev2@acme.example" } },
+  });
+
+  if (alex) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    const nextWeek = new Date(today);
+    nextWeek.setDate(today.getDate() + 5);
+
+    await prisma.timesheet.deleteMany({
+      where: {
+        developerId: {
+          in: [alex.id, jordan?.id].filter(Boolean) as string[],
+        },
+      },
+    });
+
+    await prisma.timesheet.createMany({
+      data: [
+        {
+          developerId: alex.id,
+          projectId: project.id,
+          workDate: yesterday,
+          hours: 8,
+          taskSummary: "Built timesheet CRUD and RBAC checks",
+          isOvertime: false,
+        },
+        {
+          developerId: alex.id,
+          projectId: project.id,
+          workDate: today,
+          hours: 6,
+          taskSummary: "Polished dense UI for governance portal",
+          isOvertime: false,
+        },
+        ...(jordan
+          ? [
+              {
+                developerId: jordan.id,
+                projectId: project.id,
+                workDate: today,
+                hours: 7.5,
+                taskSummary: "Reviewed scope swap validation rules",
+                isOvertime: false,
+              },
+            ]
+          : []),
+      ],
+    });
+
+    await prisma.leaveRequest.deleteMany({
+      where: { developerId: alex.id },
+    });
+
+    await prisma.leaveRequest.create({
+      data: {
+        developerId: alex.id,
+        leaveType: "ANNUAL_LEAVE",
+        status: "PENDING",
+        startDate: nextWeek,
+        endDate: nextWeek,
+        totalDays: 1,
+        reason: "Family event — requesting one day annual leave",
+      },
+    });
+
+    const skillCatalog = [
+      { name: "TypeScript", category: "Language" },
+      { name: "React", category: "Frontend" },
+      { name: "PostgreSQL", category: "Database" },
+      { name: "System Design", category: "Architecture" },
+    ];
+
+    for (const s of skillCatalog) {
+      const category = await prisma.skillCategory.upsert({
+        where: { name: s.category },
+        update: { isActive: true },
+        create: { name: s.category, isActive: true },
+      });
+
+      await prisma.skill.upsert({
+        where: {
+          categoryId_name: { categoryId: category.id, name: s.name },
+        },
+        update: { isActive: true },
+        create: {
+          name: s.name,
+          categoryId: category.id,
+          isActive: true,
+        },
+      });
+    }
+
+    const language = await prisma.skillCategory.findUnique({
+      where: { name: "Language" },
+    });
+    const frontend = await prisma.skillCategory.findUnique({
+      where: { name: "Frontend" },
+    });
+    const ts =
+      language &&
+      (await prisma.skill.findUnique({
+        where: {
+          categoryId_name: { categoryId: language.id, name: "TypeScript" },
+        },
+      }));
+    const react =
+      frontend &&
+      (await prisma.skill.findUnique({
+        where: {
+          categoryId_name: { categoryId: frontend.id, name: "React" },
+        },
+      }));
+
+    if (ts) {
+      await prisma.developerSkill.upsert({
+        where: {
+          developerId_skillId: { developerId: alex.id, skillId: ts.id },
+        },
+        update: { level: "ADVANCED", yearsExp: 4 },
+        create: {
+          developerId: alex.id,
+          skillId: ts.id,
+          level: "ADVANCED",
+          yearsExp: 4,
+        },
+      });
+    }
+    if (react) {
+      await prisma.developerSkill.upsert({
+        where: {
+          developerId_skillId: { developerId: alex.id, skillId: react.id },
+        },
+        update: { level: "INTERMEDIATE", yearsExp: 3 },
+        create: {
+          developerId: alex.id,
+          skillId: react.id,
+          level: "INTERMEDIATE",
+          yearsExp: 3,
+        },
+      });
+    }
+
+    await prisma.training.deleteMany({ where: { developerId: alex.id } });
+    await prisma.training.create({
+      data: {
+        developerId: alex.id,
+        title: "Advanced TypeScript Patterns",
+        provider: "Frontend Masters",
+        status: "IN_PROGRESS",
+        startDate: today,
+        hours: 12,
+        skillFocus: "TypeScript",
+      },
+    });
+
+    await prisma.coaching.deleteMany({ where: { developerId: alex.id } });
+    await prisma.coaching.create({
+      data: {
+        developerId: alex.id,
+        coachName: "Vendor Lead",
+        topic: "Delivery ownership & estimation",
+        status: "SCHEDULED",
+        sessionDate: nextWeek,
+        durationMin: 45,
+      },
+    });
+
+    await prisma.performanceAction.deleteMany({
+      where: { developerId: alex.id },
+    });
+    await prisma.performanceAction.create({
+      data: {
+        developerId: alex.id,
+        actionType: "REWARD",
+        title: "Sprint MVP",
+        reason: "Delivered governance portal MVP ahead of schedule",
+        points: 10,
+        actionDate: today,
+      },
+    });
   }
 
   console.log("Seed complete.");

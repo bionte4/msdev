@@ -22,6 +22,20 @@ enum OvertimeStatus {
   REJECTED_CLIENT
 }
 
+enum LeaveType {
+  ANNUAL_LEAVE
+  SICK
+  UNPAID
+  OTHER
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
 enum ReplacementStatus {
   OPEN
   IN_PROGRESS
@@ -47,6 +61,31 @@ enum IntegrationTestStatus {
   NEVER
   SUCCESS
   FAILED
+}
+
+enum SkillLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+}
+
+enum TrainingStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum CoachingStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+enum PerformanceActionType {
+  REWARD
+  PUNISHMENT
 }
 
 model Client {
@@ -122,12 +161,21 @@ model Developer {
   client           Client              @relation(fields: [clientId], references: [id])
   hourlyRate       Decimal             @db.Decimal(10, 2)
   standardCapacity Decimal             @default(40) @db.Decimal(5, 2)
+  jobTitle         String              @default("Developer")
+  startDate        DateTime?           @db.Date
+  endDate          DateTime?           @db.Date
+  notes            String?
   skillTags        String[]
   isActive         Boolean             @default(true)
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
   timesheets       Timesheet[]
   overtimeRequests OvertimeRequest[]
+  leaveRequests    LeaveRequest[]
+  developerSkills  DeveloperSkill[]
+  trainings        Training[]
+  coachings        Coaching[]
+  performanceActions PerformanceAction[]
   evaluations      MonthlyEvaluation[]
   replacementsAsOutgoing ReplacementTicket[] @relation("OutgoingDeveloper")
   replacementsAsIncoming ReplacementTicket[] @relation("IncomingDeveloper")
@@ -181,6 +229,26 @@ model OvertimeRequest {
   updatedAt    DateTime       @updatedAt
 
   @@index([developerId, status])
+}
+
+model LeaveRequest {
+  id            String      @id @default(cuid())
+  developerId   String
+  developer     Developer   @relation(fields: [developerId], references: [id])
+  leaveType     LeaveType
+  status        LeaveStatus @default(PENDING)
+  startDate     DateTime    @db.Date
+  endDate       DateTime    @db.Date
+  totalDays     Decimal     @db.Decimal(4, 1)
+  reason        String
+  reviewNote    String?
+  reviewedAt    DateTime?
+  reviewedById  String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([developerId, status])
+  @@index([startDate, endDate])
 }
 
 model MonthlyEvaluation {
@@ -268,4 +336,99 @@ model IntegrationConfig {
   updatedById     String?
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
+}
+
+model SkillCategory {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  skills    Skill[]
+}
+
+model Skill {
+  id          String           @id @default(cuid())
+  name        String
+  categoryId  String
+  category    SkillCategory    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  description String?
+  isActive    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  developers  DeveloperSkill[]
+
+  @@unique([categoryId, name])
+  @@index([categoryId])
+}
+
+model DeveloperSkill {
+  id          String     @id @default(cuid())
+  developerId String
+  developer   Developer  @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  skillId     String
+  skill       Skill      @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  level       SkillLevel @default(INTERMEDIATE)
+  yearsExp    Decimal?   @db.Decimal(4, 1)
+  notes       String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@unique([developerId, skillId])
+  @@index([skillId])
+}
+
+model Training {
+  id          String         @id @default(cuid())
+  developerId String
+  developer   Developer      @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  title       String
+  provider    String
+  status      TrainingStatus @default(PLANNED)
+  startDate   DateTime       @db.Date
+  endDate     DateTime?      @db.Date
+  hours       Decimal        @db.Decimal(5, 1)
+  skillFocus  String?
+  notes       String?
+  createdById String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([developerId, status])
+}
+
+model Coaching {
+  id          String         @id @default(cuid())
+  developerId String
+  developer   Developer      @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  coachName   String
+  topic       String
+  status      CoachingStatus @default(SCHEDULED)
+  sessionDate DateTime       @db.Date
+  durationMin Int            @default(60)
+  outcome     String?
+  notes       String?
+  createdById String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([developerId, status])
+}
+
+model PerformanceAction {
+  id          String                @id @default(cuid())
+  developerId String
+  developer   Developer             @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  actionType  PerformanceActionType
+  title       String
+  reason      String
+  points      Int                   @default(0)
+  actionDate  DateTime              @db.Date
+  issuedById  String?
+  notes       String?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  @@index([developerId, actionType])
+  @@index([actionDate])
 }

@@ -2,7 +2,10 @@ import { PrismaClient } from "@prisma/client";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
+  prismaVersion?: string;
 };
+
+const PRISMA_CLIENT_VERSION = "development-v4-skill-category-catalog";
 
 function createPrismaClient(): PrismaClient {
   return new PrismaClient({
@@ -12,7 +15,18 @@ function createPrismaClient(): PrismaClient {
 
 function getPrismaClient(): PrismaClient {
   const existing = globalForPrisma.prisma;
-  if (existing && typeof (existing as { integrationConfig?: unknown }).integrationConfig !== "undefined") {
+  const versionOk = globalForPrisma.prismaVersion === PRISMA_CLIENT_VERSION;
+  const hasModels =
+    existing &&
+    typeof (existing as { skill?: unknown }).skill !== "undefined" &&
+    typeof (existing as { skillCategory?: unknown }).skillCategory !==
+      "undefined" &&
+    typeof (existing as { training?: unknown }).training !== "undefined" &&
+    typeof (existing as { coaching?: unknown }).coaching !== "undefined" &&
+    typeof (existing as { performanceAction?: unknown }).performanceAction !==
+      "undefined";
+
+  if (existing && versionOk && hasModels) {
     return existing;
   }
 
@@ -23,6 +37,7 @@ function getPrismaClient(): PrismaClient {
   const client = createPrismaClient();
   if (process.env.NODE_ENV !== "production") {
     globalForPrisma.prisma = client;
+    globalForPrisma.prismaVersion = PRISMA_CLIENT_VERSION;
   }
   return client;
 }

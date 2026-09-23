@@ -10,6 +10,8 @@ import {
   ArrowLeftRight,
   Timer,
   Plug,
+  Users,
+  GraduationCap,
   Menu,
   X,
   LogOut,
@@ -22,6 +24,8 @@ import { Button } from "@/components/ui/button";
 
 const NAV_ITEMS = [
   { href: "/capacity", label: "Capacity", icon: LayoutDashboard },
+  { href: "/personnel", label: "Personnel", icon: Users },
+  { href: "/development", label: "Development", icon: GraduationCap },
   { href: "/timesheets", label: "Timesheets", icon: Clock },
   { href: "/overtime", label: "Overtime", icon: Timer },
   { href: "/evaluations", label: "Evaluations", icon: ClipboardCheck },
