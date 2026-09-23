@@ -379,7 +379,7 @@ export function PersonnelCrud({ items, permissions }: PersonnelCrudProps) {
                       {item.jobTitle}
                     </TableCell>
                     <TableCell className="hidden tabular-nums lg:table-cell">
-                      ${item.hourlyRate}/h · {item.standardCapacity}h
+                      {item.hourlyRate}/h · {item.standardCapacity}h
                     </TableCell>
                     <TableCell>
                       {item.isActive ? (
