@@ -5,7 +5,7 @@ const globalForPrisma = globalThis as unknown as {
   prismaVersion?: string;
 };
 
-const PRISMA_CLIENT_VERSION = "development-v4-skill-category-catalog";
+const PRISMA_CLIENT_VERSION = "development-v5-training-schedule";
 
 function createPrismaClient(): PrismaClient {
   return new PrismaClient({

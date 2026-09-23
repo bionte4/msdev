@@ -530,6 +530,21 @@ function SkillsSection({
   );
 }
 
+function trainingStatusVariant(
+  status: string
+): "default" | "secondary" | "success" | "warning" | "destructive" {
+  switch (status) {
+    case "COMPLETED":
+      return "success";
+    case "IN_PROGRESS":
+      return "warning";
+    case "CANCELLED":
+      return "destructive";
+    default:
+      return "secondary";
+  }
+}
+
 function TrainingSection({
   items,
   developers,
@@ -547,44 +562,99 @@ function TrainingSection({
   startTransition: (cb: () => void) => void;
   onDone: () => void;
 }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [developerId, setDeveloperId] = useState(developers[0]?.id ?? "");
   const [title, setTitle] = useState("");
   const [provider, setProvider] = useState("");
   const [hours, setHours] = useState("8");
-  const [startDate, setStartDate] = useState(
-    new Date().toISOString().slice(0, 10)
-  );
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate] = useState("");
+  const [status, setStatus] = useState("PLANNED");
   const [skillFocus, setSkillFocus] = useState("");
+  const [location, setLocation] = useState("");
+  const [notes, setNotes] = useState("");
+
+  function resetForm() {
+    setEditingId(null);
+    setTitle("");
+    setProvider("");
+    setHours("8");
+    setStartDate(today);
+    setEndDate("");
+    setStatus("PLANNED");
+    setSkillFocus("");
+    setLocation("");
+    setNotes("");
+    setDeveloperId(developers[0]?.id ?? "");
+  }
+
+  function loadForEdit(t: DevelopmentBoardData["trainings"][number]) {
+    setEditingId(t.id);
+    setDeveloperId(t.developerId);
+    setTitle(t.title);
+    setProvider(t.provider);
+    setHours(String(t.hours));
+    setStartDate(t.startDate);
+    setEndDate(t.endDate ?? "");
+    setStatus(t.status);
+    setSkillFocus(t.skillFocus ?? "");
+    setLocation(t.location ?? "");
+    setNotes(t.notes ?? "");
+  }
+
+  const upcoming = items.filter(
+    (t) =>
+      t.status !== "CANCELLED" &&
+      t.status !== "COMPLETED" &&
+      t.startDate >= today
+  ).length;
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Training</CardTitle>
-        <CardDescription>Planned / in-progress / completed programs</CardDescription>
+        <CardTitle>Schedule training</CardTitle>
+        <CardDescription>
+          Plan sessions with start/end dates, location, and status
+          {upcoming > 0 ? ` · ${upcoming} upcoming` : ""}
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {canManage && (
           <form
-            className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6"
+            className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4"
             onSubmit={(e) => {
               e.preventDefault();
+              if (endDate && endDate < startDate) {
+                toast.error("End date must be on or after start date");
+                return;
+              }
               startTransition(async () => {
                 const result = await upsertTraining({
+                  id: editingId ?? undefined,
                   developerId,
                   title,
                   provider,
                   hours: Number(hours),
                   startDate: new Date(startDate),
-                  skillFocus,
-                  status: "PLANNED",
+                  endDate: endDate ? new Date(endDate) : null,
+                  status: status as
+                    | "PLANNED"
+                    | "IN_PROGRESS"
+                    | "COMPLETED"
+                    | "CANCELLED",
+                  skillFocus: skillFocus || null,
+                  location: location || null,
+                  notes: notes || null,
                 });
                 if (!result.success) {
                   toast.error(result.error);
                   return;
                 }
-                toast.success("Training added");
-                setTitle("");
-                setProvider("");
+                toast.success(
+                  editingId ? "Training schedule updated" : "Training scheduled"
+                );
+                resetForm();
                 onDone();
               });
             }}
@@ -602,41 +672,78 @@ function TrainingSection({
               </SelectContent>
             </Select>
             <Input
-              placeholder="Title"
+              placeholder="Training title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               required
             />
             <Input
-              placeholder="Provider"
+              placeholder="Provider / vendor"
               value={provider}
               onChange={(e) => setProvider(e.target.value)}
               required
             />
+            <Select value={status} onValueChange={setStatus}>
+              <SelectTrigger>
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                {["PLANNED", "IN_PROGRESS", "COMPLETED", "CANCELLED"].map(
+                  (s) => (
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
+                  )
+                )}
+              </SelectContent>
+            </Select>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-slate-500">
+                Start date
+              </label>
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-slate-500">
+                End date
+              </label>
+              <Input
+                type="date"
+                value={endDate}
+                min={startDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-slate-500">
+                Hours
+              </label>
+              <Input
+                type="number"
+                min={0.5}
+                step={0.5}
+                value={hours}
+                onChange={(e) => setHours(e.target.value)}
+                placeholder="Hours"
+                required
+              />
+            </div>
             <Input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              required
+              placeholder="Location / meeting link"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
             />
-            <Input
-              type="number"
-              min={0.5}
-              step={0.5}
-              value={hours}
-              onChange={(e) => setHours(e.target.value)}
-              placeholder="Hours"
-              required
-            />
-            <Button type="submit" size="sm" disabled={isPending}>
-              Add training
-            </Button>
             <Select
               value={skillFocus || "__none__"}
               onValueChange={(v) => setSkillFocus(v === "__none__" ? "" : v)}
             >
-              <SelectTrigger className="sm:col-span-3 lg:col-span-6">
-                <SelectValue placeholder="Skill focus from catalog (optional)" />
+              <SelectTrigger className="sm:col-span-2">
+                <SelectValue placeholder="Skill focus from catalog" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none__">No skill focus</SelectItem>
@@ -647,6 +754,33 @@ function TrainingSection({
                 ))}
               </SelectContent>
             </Select>
+            <Textarea
+              className="sm:col-span-2 lg:col-span-2 min-h-[64px]"
+              placeholder="Notes (optional)"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+            <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-4">
+              <Button type="submit" size="sm" disabled={isPending}>
+                {isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Plus className="h-3.5 w-3.5" />
+                )}
+                {editingId ? "Save schedule" : "Schedule training"}
+              </Button>
+              {editingId && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={resetForm}
+                  disabled={isPending}
+                >
+                  Cancel edit
+                </Button>
+              )}
+            </div>
           </form>
         )}
 
@@ -655,16 +789,20 @@ function TrainingSection({
             <TableRow>
               <TableHead>Developer</TableHead>
               <TableHead>Training</TableHead>
+              <TableHead>Schedule</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="hidden md:table-cell">Hours</TableHead>
-              <TableHead className="w-12" />
+              {canManage && <TableHead className="w-[88px]">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {items.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-[12px] text-slate-500">
-                  No trainings yet.
+                <TableCell
+                  colSpan={canManage ? 6 : 5}
+                  className="text-[12px] text-slate-500"
+                >
+                  No training scheduled yet.
                 </TableCell>
               </TableRow>
             ) : (
@@ -674,39 +812,67 @@ function TrainingSection({
                   <TableCell>
                     <div className="font-medium">{t.title}</div>
                     <div className="text-[11px] text-slate-500">
-                      {t.provider} · {t.startDate}
+                      {t.provider}
                       {t.skillFocus ? ` · ${t.skillFocus}` : ""}
+                      {t.location ? ` · ${t.location}` : ""}
                     </div>
                   </TableCell>
+                  <TableCell className="tabular-nums text-[12px]">
+                    {t.startDate}
+                    {t.endDate && t.endDate !== t.startDate
+                      ? ` → ${t.endDate}`
+                      : ""}
+                  </TableCell>
                   <TableCell>
-                    <Badge variant="secondary">{t.status}</Badge>
+                    <Badge variant={trainingStatusVariant(t.status)}>
+                      {t.status}
+                    </Badge>
                   </TableCell>
                   <TableCell className="hidden tabular-nums md:table-cell">
                     {t.hours}h
                   </TableCell>
-                  <TableCell>
-                    {t.canEdit && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-red-600"
-                        disabled={isPending}
-                        onClick={() =>
-                          startTransition(async () => {
-                            const result = await deleteTraining({ id: t.id });
-                            if (!result.success) {
-                              toast.error(result.error);
-                              return;
-                            }
-                            toast.success("Training deleted");
-                            onDone();
-                          })
-                        }
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                  </TableCell>
+                  {canManage && (
+                    <TableCell>
+                      <div className="flex gap-1">
+                        {t.canEdit && (
+                          <>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7"
+                              disabled={isPending}
+                              onClick={() => loadForEdit(t)}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-red-600"
+                              disabled={isPending}
+                              onClick={() =>
+                                startTransition(async () => {
+                                  const result = await deleteTraining({
+                                    id: t.id,
+                                  });
+                                  if (!result.success) {
+                                    toast.error(result.error);
+                                    return;
+                                  }
+                                  toast.success("Training removed");
+                                  if (editingId === t.id) resetForm();
+                                  onDone();
+                                })
+                              }
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))
             )}

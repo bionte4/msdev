@@ -13,18 +13,29 @@ export const coachingStatuses = [
   "CANCELLED",
 ] as const;
 
-export const upsertTrainingSchema = z.object({
-  id: z.string().optional(),
-  developerId: z.string().min(1),
-  title: z.string().min(3).max(160),
-  provider: z.string().min(2).max(120),
-  status: z.enum(trainingStatuses).default("PLANNED"),
-  startDate: z.coerce.date(),
-  endDate: z.coerce.date().optional().nullable(),
-  hours: z.coerce.number().positive().max(500),
-  skillFocus: z.string().max(120).optional(),
-  notes: z.string().max(1000).optional(),
-});
+export const upsertTrainingSchema = z
+  .object({
+    id: z.string().optional(),
+    developerId: z.string().min(1),
+    title: z.string().min(3).max(160),
+    provider: z.string().min(2).max(120),
+    status: z.enum(trainingStatuses).default("PLANNED"),
+    startDate: z.coerce.date(),
+    endDate: z.coerce.date().optional().nullable(),
+    hours: z.coerce.number().positive().max(500),
+    skillFocus: z.string().max(120).optional().nullable(),
+    notes: z.string().max(1000).optional().nullable(),
+    location: z.string().max(200).optional().nullable(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.endDate && data.endDate < data.startDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["endDate"],
+        message: "End date must be on or after start date",
+      });
+    }
+  });
 
 export const deleteTrainingSchema = z.object({
   id: z.string().min(1),

@@ -237,8 +237,24 @@ async function main() {
         provider: "Frontend Masters",
         status: "IN_PROGRESS",
         startDate: today,
+        endDate: new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000),
         hours: 12,
         skillFocus: "TypeScript",
+        location: "Online · Zoom",
+        notes: "Self-paced with weekly office hours",
+      },
+    });
+    await prisma.training.create({
+      data: {
+        developerId: alex.id,
+        title: "PostgreSQL Performance Tuning",
+        provider: "Internal L&D",
+        status: "PLANNED",
+        startDate: nextWeek,
+        endDate: nextWeek,
+        hours: 4,
+        skillFocus: "PostgreSQL",
+        location: "Meeting Room B",
       },
     });
 

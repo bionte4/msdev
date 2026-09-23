@@ -389,12 +389,14 @@ model Training {
   endDate     DateTime?      @db.Date
   hours       Decimal        @db.Decimal(5, 1)
   skillFocus  String?
+  location    String?
   notes       String?
   createdById String?
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
   @@index([developerId, status])
+  @@index([startDate])
 }
 
 model Coaching {

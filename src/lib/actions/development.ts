@@ -124,6 +124,7 @@ export interface DevelopmentBoardData {
     endDate: string | null;
     hours: number;
     skillFocus: string | null;
+    location: string | null;
     notes: string | null;
     canEdit: boolean;
   }[];
@@ -275,6 +276,7 @@ export async function getDevelopmentBoard(): Promise<
         endDate: t.endDate?.toISOString().slice(0, 10) ?? null,
         hours: toNumber(t.hours),
         skillFocus: t.skillFocus,
+        location: t.location,
         notes: t.notes,
         canEdit: p.canManageTraining,
       })),
@@ -550,8 +552,9 @@ export async function upsertTraining(
       startDate: parsed.data.startDate,
       endDate: parsed.data.endDate ?? null,
       hours: parsed.data.hours,
-      skillFocus: parsed.data.skillFocus,
-      notes: parsed.data.notes,
+      skillFocus: parsed.data.skillFocus || null,
+      location: parsed.data.location || null,
+      notes: parsed.data.notes || null,
       createdById: session.user.id,
     };
 
