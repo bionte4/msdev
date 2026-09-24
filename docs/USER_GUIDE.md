@@ -144,7 +144,7 @@ Menugaskan **cover developer** menggantikan yang absen (cuti/sakit).
 
 | Tab / area | Siapa yang mengelola |
 | --- | --- |
-| Katalog skill / kategori | Vendor Lead, Admin |
+| Katalog skill / kategori | Vendor Lead, Vendor AM, Admin (CRUD penuh) |
 | Assign skill ke developer | Lead, AM, Developer (hanya diri sendiri) |
 | Training schedule | Lead, AM |
 | Coaching | Lead, AM |

@@ -3,11 +3,13 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Card,
   CardContent,
@@ -36,6 +38,7 @@ import {
   deleteDeveloperSkill,
   deletePerformanceAction,
   deleteSkillCatalog,
+  deleteSkillCategory,
   deleteTraining,
   upsertCoaching,
   upsertPerformanceAction,
@@ -123,9 +126,15 @@ function SkillsSection({
   const activeSkills = catalog.filter((s) => s.isActive);
 
   const [categoryName, setCategoryName] = useState("");
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(
+    null
+  );
+  const [categoryActive, setCategoryActive] = useState(true);
+
   const [skillName, setSkillName] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [description, setDescription] = useState("");
+  const [skillActive, setSkillActive] = useState(true);
   const [editingSkillId, setEditingSkillId] = useState<string | null>(null);
 
   const [developerId, setDeveloperId] = useState(developers[0]?.id ?? "");
@@ -133,11 +142,23 @@ function SkillsSection({
   const [level, setLevel] = useState("INTERMEDIATE");
   const [yearsExp, setYearsExp] = useState("1");
 
+  function resetCategoryForm() {
+    setEditingCategoryId(null);
+    setCategoryName("");
+    setCategoryActive(true);
+  }
+
   function resetSkillForm() {
     setEditingSkillId(null);
     setSkillName("");
     setCategoryId("");
     setDescription("");
+    setSkillActive(true);
+  }
+
+  function categoryOptionsForSkillForm() {
+    if (editingSkillId) return categories;
+    return activeCategories;
   }
 
   return (
@@ -146,122 +167,272 @@ function SkillsSection({
         <CardHeader>
           <CardTitle>Skill catalog</CardTitle>
           <CardDescription>
-            Managed from database — add categories & skills (no hardcoded list)
+            Full CRUD for categories & skills · inactive items stay in history
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-4">
           {permissions.canManageCatalog ? (
             <>
-              <form
-                className="grid gap-2 sm:grid-cols-[1fr_auto]"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  startTransition(async () => {
-                    const result = await upsertSkillCategory({
-                      name: categoryName,
-                    });
-                    if (!result.success) {
-                      toast.error(result.error);
-                      return;
-                    }
-                    toast.success(`Category “${result.data.name}” saved`);
-                    setCategoryName("");
-                    setCategoryId(result.data.id);
-                    onDone();
-                  });
-                }}
-              >
-                <Input
-                  placeholder="New category name (e.g. Backend)"
-                  value={categoryName}
-                  onChange={(e) => setCategoryName(e.target.value)}
-                  required
-                />
-                <Button type="submit" size="sm" disabled={isPending}>
-                  {isPending ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Plus className="h-3.5 w-3.5" />
-                  )}
-                  Add category
-                </Button>
-              </form>
-
-              <form
-                className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (!categoryId) {
-                    toast.error("Select a category first");
-                    return;
-                  }
-                  startTransition(async () => {
-                    const result = await upsertSkillCatalog({
-                      id: editingSkillId ?? undefined,
-                      name: skillName,
-                      categoryId,
-                      description: description || null,
-                      isActive: true,
-                    });
-                    if (!result.success) {
-                      toast.error(result.error);
-                      return;
-                    }
-                    toast.success(
-                      editingSkillId ? "Skill updated" : "Skill added to catalog"
-                    );
-                    resetSkillForm();
-                    onDone();
-                  });
-                }}
-              >
-                <Input
-                  placeholder="Skill name"
-                  value={skillName}
-                  onChange={(e) => setSkillName(e.target.value)}
-                  required
-                />
-                <Select value={categoryId} onValueChange={setCategoryId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {activeCategories.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Input
-                  placeholder="Description (optional)"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                />
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={isPending || activeCategories.length === 0}
-                >
-                  {editingSkillId ? "Save skill" : "Add skill"}
-                </Button>
-                {editingSkillId && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={resetSkillForm}
-                  >
-                    Cancel edit
-                  </Button>
-                )}
-              </form>
-
-              {activeCategories.length === 0 && (
-                <p className="text-[12px] text-amber-700">
-                  Create a category first, then add skills to the catalog.
+              <div className="space-y-2">
+                <p className="text-[12px] font-semibold text-slate-700">
+                  Categories
                 </p>
-              )}
+                <form
+                  className="grid gap-2 sm:grid-cols-[1fr_auto_auto]"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    startTransition(async () => {
+                      const result = await upsertSkillCategory({
+                        id: editingCategoryId ?? undefined,
+                        name: categoryName,
+                        isActive: categoryActive,
+                      });
+                      if (!result.success) {
+                        toast.error(result.error);
+                        return;
+                      }
+                      toast.success(
+                        editingCategoryId
+                          ? "Category updated"
+                          : `Category “${result.data.name}” created`
+                      );
+                      if (!editingCategoryId) {
+                        setCategoryId(result.data.id);
+                      }
+                      resetCategoryForm();
+                      onDone();
+                    });
+                  }}
+                >
+                  <Input
+                    placeholder="Category name (e.g. Backend)"
+                    value={categoryName}
+                    onChange={(e) => setCategoryName(e.target.value)}
+                    required
+                  />
+                  <div className="flex items-center gap-2 px-1">
+                    <Switch
+                      checked={categoryActive}
+                      onCheckedChange={setCategoryActive}
+                    />
+                    <Label className="normal-case tracking-normal text-[11px]">
+                      Active
+                    </Label>
+                  </div>
+                  <div className="flex gap-1">
+                    <Button type="submit" size="sm" disabled={isPending}>
+                      {isPending ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : editingCategoryId ? (
+                        <Pencil className="h-3.5 w-3.5" />
+                      ) : (
+                        <Plus className="h-3.5 w-3.5" />
+                      )}
+                      {editingCategoryId ? "Save" : "Add"}
+                    </Button>
+                    {editingCategoryId && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={resetCategoryForm}
+                      >
+                        Cancel
+                      </Button>
+                    )}
+                  </div>
+                </form>
+
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="w-[100px]">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {categories.length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={3}
+                          className="text-[12px] text-slate-500"
+                        >
+                          No categories yet — create one to start the catalog.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      categories.map((c) => (
+                        <TableRow key={c.id}>
+                          <TableCell className="font-medium">{c.name}</TableCell>
+                          <TableCell>
+                            {c.isActive ? (
+                              <Badge variant="success">Active</Badge>
+                            ) : (
+                              <Badge variant="secondary">Inactive</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-1">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                disabled={isPending}
+                                aria-label="Edit category"
+                                onClick={() => {
+                                  setEditingCategoryId(c.id);
+                                  setCategoryName(c.name);
+                                  setCategoryActive(c.isActive);
+                                }}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-red-600"
+                                disabled={isPending}
+                                aria-label="Delete category"
+                                onClick={() => {
+                                  if (
+                                    !window.confirm(
+                                      `Remove category “${c.name}”? Skills under it will be deactivated if still referenced.`
+                                    )
+                                  ) {
+                                    return;
+                                  }
+                                  startTransition(async () => {
+                                    const result = await deleteSkillCategory({
+                                      id: c.id,
+                                    });
+                                    if (!result.success) {
+                                      toast.error(result.error);
+                                      return;
+                                    }
+                                    toast.success(
+                                      result.data.deactivated
+                                        ? "Category deactivated (has skills)"
+                                        : "Category deleted"
+                                    );
+                                    if (editingCategoryId === c.id) {
+                                      resetCategoryForm();
+                                    }
+                                    if (categoryId === c.id) setCategoryId("");
+                                    onDone();
+                                  });
+                                }}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div className="space-y-2 border-t border-slate-100 pt-3">
+                <p className="text-[12px] font-semibold text-slate-700">
+                  Skills
+                </p>
+                <form
+                  className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!categoryId) {
+                      toast.error("Select a category first");
+                      return;
+                    }
+                    startTransition(async () => {
+                      const result = await upsertSkillCatalog({
+                        id: editingSkillId ?? undefined,
+                        name: skillName,
+                        categoryId,
+                        description: description || null,
+                        isActive: skillActive,
+                      });
+                      if (!result.success) {
+                        toast.error(result.error);
+                        return;
+                      }
+                      toast.success(
+                        editingSkillId
+                          ? "Skill updated"
+                          : "Skill added to catalog"
+                      );
+                      resetSkillForm();
+                      onDone();
+                    });
+                  }}
+                >
+                  <Input
+                    placeholder="Skill name"
+                    value={skillName}
+                    onChange={(e) => setSkillName(e.target.value)}
+                    required
+                  />
+                  <Select value={categoryId} onValueChange={setCategoryId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categoryOptionsForSkillForm().map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                          {!c.isActive ? " (inactive)" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    placeholder="Description (optional)"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className="sm:col-span-2 lg:col-span-1"
+                  />
+                  <div className="flex items-center gap-2 px-1">
+                    <Switch
+                      checked={skillActive}
+                      onCheckedChange={setSkillActive}
+                    />
+                    <Label className="normal-case tracking-normal text-[11px]">
+                      Active
+                    </Label>
+                  </div>
+                  <div className="flex gap-1">
+                    <Button
+                      type="submit"
+                      size="sm"
+                      disabled={
+                        isPending || categoryOptionsForSkillForm().length === 0
+                      }
+                    >
+                      {editingSkillId ? "Save skill" : "Add skill"}
+                    </Button>
+                    {editingSkillId && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={resetSkillForm}
+                      >
+                        Cancel
+                      </Button>
+                    )}
+                  </div>
+                </form>
+
+                {activeCategories.length === 0 && !editingSkillId && (
+                  <p className="text-[12px] text-amber-700">
+                    Create an active category first, then add skills.
+                  </p>
+                )}
+              </div>
             </>
           ) : (
             <p className="text-[12px] text-slate-500">
@@ -277,7 +448,7 @@ function SkillsSection({
                 <TableHead className="hidden md:table-cell">Description</TableHead>
                 <TableHead>Status</TableHead>
                 {permissions.canManageCatalog && (
-                  <TableHead className="w-[88px]">Actions</TableHead>
+                  <TableHead className="w-[100px]">Actions</TableHead>
                 )}
               </TableRow>
             </TableHeader>
@@ -314,17 +485,19 @@ function SkillsSection({
                           <Button
                             type="button"
                             variant="ghost"
-                            size="sm"
-                            className="h-7"
+                            size="icon"
+                            className="h-7 w-7"
                             disabled={isPending}
+                            aria-label="Edit skill"
                             onClick={() => {
                               setEditingSkillId(s.id);
                               setSkillName(s.name);
                               setCategoryId(s.categoryId);
                               setDescription(s.description ?? "");
+                              setSkillActive(s.isActive);
                             }}
                           >
-                            Edit
+                            <Pencil className="h-3.5 w-3.5" />
                           </Button>
                           <Button
                             type="button"
@@ -332,7 +505,15 @@ function SkillsSection({
                             size="icon"
                             className="h-7 w-7 text-red-600"
                             disabled={isPending}
-                            onClick={() =>
+                            aria-label="Delete skill"
+                            onClick={() => {
+                              if (
+                                !window.confirm(
+                                  `Remove skill “${s.name}” from catalog?`
+                                )
+                              ) {
+                                return;
+                              }
                               startTransition(async () => {
                                 const result = await deleteSkillCatalog({
                                   id: s.id,
@@ -342,12 +523,14 @@ function SkillsSection({
                                   return;
                                 }
                                 toast.success(
-                                  "Skill removed / deactivated from catalog"
+                                  result.data.deactivated
+                                    ? "Skill deactivated (still assigned)"
+                                    : "Skill deleted"
                                 );
                                 if (editingSkillId === s.id) resetSkillForm();
                                 onDone();
-                              })
-                            }
+                              });
+                            }}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
@@ -388,13 +571,14 @@ function SkillsSection({
                       | "INTERMEDIATE"
                       | "ADVANCED"
                       | "EXPERT",
-                    yearsExp: Number(yearsExp),
+                    yearsExp: Number(yearsExp) || 0,
                   });
                   if (!result.success) {
                     toast.error(result.error);
                     return;
                   }
                   toast.success("Skill assigned");
+                  setSkillId("");
                   onDone();
                 });
               }}
@@ -428,35 +612,29 @@ function SkillsSection({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {["BEGINNER", "INTERMEDIATE", "ADVANCED", "EXPERT"].map(
-                    (l) => (
-                      <SelectItem key={l} value={l}>
-                        {l}
-                      </SelectItem>
-                    )
-                  )}
+                  <SelectItem value="BEGINNER">Beginner</SelectItem>
+                  <SelectItem value="INTERMEDIATE">Intermediate</SelectItem>
+                  <SelectItem value="ADVANCED">Advanced</SelectItem>
+                  <SelectItem value="EXPERT">Expert</SelectItem>
                 </SelectContent>
               </Select>
               <Input
                 type="number"
                 min={0}
+                max={40}
                 step={0.5}
+                placeholder="Years"
                 value={yearsExp}
                 onChange={(e) => setYearsExp(e.target.value)}
-                placeholder="Years"
               />
-              <Button
-                type="submit"
-                size="sm"
-                disabled={isPending || activeSkills.length === 0}
-              >
+              <Button type="submit" size="sm" disabled={isPending}>
                 Assign
               </Button>
             </form>
           )}
 
-          {activeSkills.length === 0 && (
-            <p className="text-[12px] text-slate-500">
+          {activeSkills.length === 0 && permissions.canAssignSkills && (
+            <p className="text-[12px] text-amber-700">
               No active skills in catalog yet — add them in Skill catalog first.
             </p>
           )}
@@ -467,14 +645,19 @@ function SkillsSection({
                 <TableHead>Developer</TableHead>
                 <TableHead>Skill</TableHead>
                 <TableHead>Level</TableHead>
-                <TableHead className="hidden md:table-cell">Years</TableHead>
-                <TableHead className="w-12" />
+                <TableHead className="hidden sm:table-cell">Years</TableHead>
+                {permissions.canAssignSkills && (
+                  <TableHead className="w-[72px]">Actions</TableHead>
+                )}
               </TableRow>
             </TableHeader>
             <TableBody>
               {assignments.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-[12px] text-slate-500">
+                  <TableCell
+                    colSpan={permissions.canAssignSkills ? 5 : 4}
+                    className="text-[12px] text-slate-500"
+                  >
                     No skill assignments yet.
                   </TableCell>
                 </TableRow>
@@ -482,43 +665,46 @@ function SkillsSection({
                 assignments.map((a) => (
                   <TableRow key={a.id}>
                     <TableCell>{a.developerName}</TableCell>
-                    <TableCell>
+                    <TableCell className="font-medium">
                       {a.skillName}
                       <span className="ml-1 text-[11px] text-slate-400">
                         ({a.category})
                       </span>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="secondary">{a.level}</Badge>
+                      <Badge variant="outline">{a.level}</Badge>
                     </TableCell>
-                    <TableCell className="hidden tabular-nums md:table-cell">
+                    <TableCell className="hidden tabular-nums sm:table-cell">
                       {a.yearsExp ?? "—"}
                     </TableCell>
-                    <TableCell>
-                      {a.canEdit && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-red-600"
-                          disabled={isPending}
-                          onClick={() =>
-                            startTransition(async () => {
-                              const result = await deleteDeveloperSkill({
-                                id: a.id,
-                              });
-                              if (!result.success) {
-                                toast.error(result.error);
-                                return;
-                              }
-                              toast.success("Skill removed");
-                              onDone();
-                            })
-                          }
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
-                    </TableCell>
+                    {permissions.canAssignSkills && (
+                      <TableCell>
+                        {a.canEdit && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-red-600"
+                            disabled={isPending}
+                            onClick={() =>
+                              startTransition(async () => {
+                                const result = await deleteDeveloperSkill({
+                                  id: a.id,
+                                });
+                                if (!result.success) {
+                                  toast.error(result.error);
+                                  return;
+                                }
+                                toast.success("Assignment removed");
+                                onDone();
+                              })
+                            }
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))
               )}

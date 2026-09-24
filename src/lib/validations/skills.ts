@@ -25,6 +25,10 @@ export const deleteSkillCatalogSchema = z.object({
   id: z.string().min(1),
 });
 
+export const deleteSkillCategorySchema = z.object({
+  id: z.string().min(1),
+});
+
 export const assignDeveloperSkillSchema = z.object({
   id: z.string().optional(),
   developerId: z.string().min(1),
@@ -41,6 +45,7 @@ export const deleteDeveloperSkillSchema = z.object({
 export type UpsertSkillCategoryInput = z.infer<typeof upsertSkillCategorySchema>;
 export type UpsertSkillCatalogInput = z.infer<typeof upsertSkillCatalogSchema>;
 export type DeleteSkillCatalogInput = z.infer<typeof deleteSkillCatalogSchema>;
+export type DeleteSkillCategoryInput = z.infer<typeof deleteSkillCategorySchema>;
 export type AssignDeveloperSkillInput = z.infer<
   typeof assignDeveloperSkillSchema
 >;

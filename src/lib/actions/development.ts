@@ -8,11 +8,13 @@ import {
   assignDeveloperSkillSchema,
   deleteDeveloperSkillSchema,
   deleteSkillCatalogSchema,
+  deleteSkillCategorySchema,
   upsertSkillCatalogSchema,
   upsertSkillCategorySchema,
   type AssignDeveloperSkillInput,
   type DeleteDeveloperSkillInput,
   type DeleteSkillCatalogInput,
+  type DeleteSkillCategoryInput,
   type UpsertSkillCatalogInput,
   type UpsertSkillCategoryInput,
 } from "@/lib/validations/skills";
@@ -40,12 +42,13 @@ export interface DevelopmentPermissions {
 
 function perms(role: Role): DevelopmentPermissions {
   const lead = role === "VENDOR_LEAD" || role === "SYS_ADMIN";
+  const am = role === "VENDOR_AM";
   const pm = role === "CLIENT_PM";
   return {
-    canManageCatalog: lead,
-    canAssignSkills: lead || role === "VENDOR_AM" || role === "DEVELOPER",
-    canManageTraining: lead || role === "VENDOR_AM",
-    canManageCoaching: lead || role === "VENDOR_AM",
+    canManageCatalog: lead || am,
+    canAssignSkills: lead || am || role === "DEVELOPER",
+    canManageTraining: lead || am,
+    canManageCoaching: lead || am,
     canManagePerformance: lead || pm,
   };
 }
@@ -322,11 +325,14 @@ export async function getDevelopmentBoard(): Promise<
 
 export async function upsertSkillCategory(
   input: UpsertSkillCategoryInput
-): Promise<ActionResult<{ id: string; name: string }>> {
+): Promise<ActionResult<{ id: string; name: string; isActive: boolean }>> {
   try {
     const session = await auth();
-    assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD"]);
-    if (!mergePerms(session.user.role, session.user.engagementMode, perms).canManageCatalog) {
+    assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD", "VENDOR_AM"]);
+    if (
+      !mergePerms(session.user.role, session.user.engagementMode, perms)
+        .canManageCatalog
+    ) {
       return fail("Unauthorized");
     }
 
@@ -335,25 +341,81 @@ export async function upsertSkillCategory(
       return fail(parsed.error.issues[0]?.message ?? "Invalid category");
     }
 
+    const name = parsed.data.name.trim();
+    const duplicate = await prisma.skillCategory.findFirst({
+      where: {
+        name: { equals: name, mode: "insensitive" },
+        ...(parsed.data.id ? { NOT: { id: parsed.data.id } } : {}),
+      },
+    });
+    if (duplicate) {
+      return fail(`Category “${name}” already exists`);
+    }
+
     const row = parsed.data.id
       ? await prisma.skillCategory.update({
           where: { id: parsed.data.id },
           data: {
-            name: parsed.data.name,
+            name,
             isActive: parsed.data.isActive ?? true,
           },
         })
       : await prisma.skillCategory.create({
           data: {
-            name: parsed.data.name,
+            name,
             isActive: parsed.data.isActive ?? true,
           },
         });
 
-    return ok({ id: row.id, name: row.name });
+    return ok({ id: row.id, name: row.name, isActive: row.isActive });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to save category";
+    return fail(message);
+  }
+}
+
+export async function deleteSkillCategory(
+  input: DeleteSkillCategoryInput
+): Promise<ActionResult<{ id: string; deactivated: boolean }>> {
+  try {
+    const session = await auth();
+    assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD", "VENDOR_AM"]);
+    if (
+      !mergePerms(session.user.role, session.user.engagementMode, perms)
+        .canManageCatalog
+    ) {
+      return fail("Unauthorized");
+    }
+
+    const parsed = deleteSkillCategorySchema.safeParse(input);
+    if (!parsed.success) return fail("Invalid delete request");
+
+    const existing = await prisma.skillCategory.findUnique({
+      where: { id: parsed.data.id },
+      include: { _count: { select: { skills: true } } },
+    });
+    if (!existing) return fail("Category not found");
+
+    if (existing._count.skills > 0) {
+      await prisma.$transaction([
+        prisma.skill.updateMany({
+          where: { categoryId: existing.id },
+          data: { isActive: false },
+        }),
+        prisma.skillCategory.update({
+          where: { id: existing.id },
+          data: { isActive: false },
+        }),
+      ]);
+      return ok({ id: existing.id, deactivated: true });
+    }
+
+    await prisma.skillCategory.delete({ where: { id: existing.id } });
+    return ok({ id: existing.id, deactivated: false });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to delete category";
     return fail(message);
   }
 }
@@ -363,8 +425,11 @@ export async function upsertSkillCatalog(
 ): Promise<ActionResult<{ id: string }>> {
   try {
     const session = await auth();
-    assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD"]);
-    if (!mergePerms(session.user.role, session.user.engagementMode, perms).canManageCatalog) {
+    assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD", "VENDOR_AM"]);
+    if (
+      !mergePerms(session.user.role, session.user.engagementMode, perms)
+        .canManageCatalog
+    ) {
       return fail("Unauthorized");
     }
 
@@ -376,15 +441,30 @@ export async function upsertSkillCatalog(
     const category = await prisma.skillCategory.findUnique({
       where: { id: parsed.data.categoryId },
     });
-    if (!category || !category.isActive) {
-      return fail("Skill category not found or inactive");
+    if (!category) {
+      return fail("Skill category not found");
+    }
+    if (!category.isActive && !parsed.data.id) {
+      return fail("Cannot add skill to an inactive category");
+    }
+
+    const name = parsed.data.name.trim();
+    const duplicate = await prisma.skill.findFirst({
+      where: {
+        categoryId: parsed.data.categoryId,
+        name: { equals: name, mode: "insensitive" },
+        ...(parsed.data.id ? { NOT: { id: parsed.data.id } } : {}),
+      },
+    });
+    if (duplicate) {
+      return fail(`Skill “${name}” already exists in this category`);
     }
 
     const row = parsed.data.id
       ? await prisma.skill.update({
           where: { id: parsed.data.id },
           data: {
-            name: parsed.data.name,
+            name,
             categoryId: parsed.data.categoryId,
             description: parsed.data.description ?? null,
             isActive: parsed.data.isActive ?? true,
@@ -392,7 +472,7 @@ export async function upsertSkillCatalog(
         })
       : await prisma.skill.create({
           data: {
-            name: parsed.data.name,
+            name,
             categoryId: parsed.data.categoryId,
             description: parsed.data.description ?? null,
             isActive: parsed.data.isActive ?? true,
@@ -409,11 +489,14 @@ export async function upsertSkillCatalog(
 
 export async function deleteSkillCatalog(
   input: DeleteSkillCatalogInput
-): Promise<ActionResult<{ id: string }>> {
+): Promise<ActionResult<{ id: string; deactivated: boolean }>> {
   try {
     const session = await auth();
-    assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD"]);
-    if (!mergePerms(session.user.role, session.user.engagementMode, perms).canManageCatalog) {
+    assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD", "VENDOR_AM"]);
+    if (
+      !mergePerms(session.user.role, session.user.engagementMode, perms)
+        .canManageCatalog
+    ) {
       return fail("Unauthorized");
     }
 
@@ -431,11 +514,11 @@ export async function deleteSkillCatalog(
         where: { id: existing.id },
         data: { isActive: false },
       });
-      return ok({ id: existing.id });
+      return ok({ id: existing.id, deactivated: true });
     }
 
     await prisma.skill.delete({ where: { id: existing.id } });
-    return ok({ id: existing.id });
+    return ok({ id: existing.id, deactivated: false });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to delete skill";
