@@ -3,6 +3,8 @@
 Local-first Next.js 14 app for Managed Service & IT Staff Augmentation governance:
 capacity, personnel, timesheets, overtime, evaluations, coverage, development, and scope swaps.
 
+**Dokumentasi pengguna:** [docs/USER_GUIDE.md](./docs/USER_GUIDE.md)
+
 ## Stack
 
 - Next.js 14 (App Router, Server Actions)
