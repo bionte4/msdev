@@ -64,19 +64,31 @@ export const authOptions: NextAuthOptions = {
         token.clientId = user.clientId;
         token.developerId = user.developerId;
         token.engagementMode = user.engagementMode ?? null;
-      } else if (
+        return token;
+      }
+
+      // Refresh engagement mode for Client PM (body-shopping dual-hat).
+      if (
         token.role === "CLIENT_PM" &&
         typeof token.clientId === "string" &&
         token.clientId
       ) {
-        // Keep body-shopping dual-hat in sync if admin changes client mode.
-        const client = await prisma.client.findUnique({
-          where: { id: token.clientId },
-          select: { engagementMode: true },
-        });
-        token.engagementMode =
-          (client?.engagementMode as EngagementMode | undefined) ?? "MANAGED";
+        try {
+          const client = await prisma.client.findUnique({
+            where: { id: token.clientId },
+            select: { engagementMode: true },
+          });
+          token.engagementMode =
+            (client?.engagementMode as EngagementMode | undefined) ??
+            "MANAGED";
+        } catch {
+          // Stale Prisma client / transient DB errors must not break the session.
+          token.engagementMode =
+            (token.engagementMode as EngagementMode | null | undefined) ??
+            "MANAGED";
+        }
       }
+
       return token;
     },
     async session({ session, token }) {

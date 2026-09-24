@@ -126,6 +126,14 @@ export async function listAccessUsers(): Promise<
     assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD"]);
     const perms = mergePerms(session.user.role, session.user.engagementMode, accessPerms);
 
+    const isLeadScoped =
+      session.user.role !== "SYS_ADMIN" &&
+      hasEffectiveRole(
+        session.user.role,
+        session.user.engagementMode,
+        "VENDOR_LEAD"
+      );
+
     const where =
       session.user.role === "SYS_ADMIN"
         ? {}
@@ -160,7 +168,9 @@ export async function listAccessUsers(): Promise<
     const roles: Role[] =
       session.user.role === "SYS_ADMIN"
         ? ALL_ROLES
-        : ["VENDOR_LEAD", "VENDOR_AM", "DEVELOPER"];
+        : isLeadScoped
+          ? ["VENDOR_LEAD", "VENDOR_AM", "DEVELOPER"]
+          : [];
 
     return ok({
       items: rows.map((r) =>
