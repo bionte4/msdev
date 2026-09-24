@@ -22,7 +22,7 @@ async function main() {
     },
   });
 
-  await prisma.client.upsert({
+  const nova = await prisma.client.upsert({
     where: { code: "NOVA" },
     update: {
       isActive: true,
@@ -45,6 +45,17 @@ async function main() {
       clientId: client.id,
       name: "Governance Portal",
       code: "PORTAL",
+      isActive: true,
+    },
+  });
+
+  await prisma.project.upsert({
+    where: { clientId_code: { clientId: nova.id, code: "CORE" } },
+    update: {},
+    create: {
+      clientId: nova.id,
+      name: "Nova Core Platform",
+      code: "CORE",
       isActive: true,
     },
   });
@@ -82,6 +93,62 @@ async function main() {
       },
     });
 
+    if (u.role === "SYS_ADMIN") {
+      await prisma.clientMembership.deleteMany({ where: { userId: user.id } });
+    } else if (u.role === "CLIENT_PM") {
+      // Demo: one PM handles ACME + NOVA (multi-company).
+      await prisma.clientMembership.deleteMany({
+        where: {
+          userId: user.id,
+          clientId: { notIn: [client.id, nova.id] },
+        },
+      });
+      await prisma.clientMembership.upsert({
+        where: {
+          userId_clientId: { userId: user.id, clientId: client.id },
+        },
+        create: {
+          userId: user.id,
+          clientId: client.id,
+          isPrimary: true,
+        },
+        update: { isPrimary: true },
+      });
+      await prisma.clientMembership.upsert({
+        where: {
+          userId_clientId: { userId: user.id, clientId: nova.id },
+        },
+        create: {
+          userId: user.id,
+          clientId: nova.id,
+          isPrimary: false,
+        },
+        update: { isPrimary: false },
+      });
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { clientId: client.id },
+      });
+    } else {
+      await prisma.clientMembership.deleteMany({
+        where: {
+          userId: user.id,
+          clientId: { not: client.id },
+        },
+      });
+      await prisma.clientMembership.upsert({
+        where: {
+          userId_clientId: { userId: user.id, clientId: client.id },
+        },
+        create: {
+          userId: user.id,
+          clientId: client.id,
+          isPrimary: true,
+        },
+        update: { isPrimary: true },
+      });
+    }
+
     if (u.role === "DEVELOPER") {
       await prisma.developer.upsert({
         where: { userId: user.id },
@@ -93,6 +160,7 @@ async function main() {
           isActive: true,
           jiraAccountEmail: u.email,
           jiraLinkedAt: new Date(),
+          overtimeEligible: u.email === "dev2@acme.example" ? false : true,
         },
         create: {
           userId: user.id,
@@ -105,6 +173,11 @@ async function main() {
           isActive: true,
           jiraAccountEmail: u.email,
           jiraLinkedAt: new Date(),
+          overtimeEligible: u.email === "dev2@acme.example" ? false : true,
+          notes:
+            u.email === "dev2@acme.example"
+              ? "Demo lump-sum · OT included in salary (overtimeEligible=false)"
+              : undefined,
         },
       });
     }
@@ -478,6 +551,64 @@ async function main() {
         href: "/leaderboard",
         type: "INFO",
       },
+    });
+  }
+
+  // Sample operational tickets (dev + non-dev categories)
+  if (pm && alex) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    await prisma.operationalTicket.deleteMany({
+      where: { clientId: client.id, title: { startsWith: "[Seed]" } },
+    });
+    await prisma.operationalTicket.createMany({
+      data: [
+        {
+          clientId: client.id,
+          projectId: project.id,
+          workDate: today,
+          category: "MANAGE_APPS",
+          title: "[Seed] Rotate SSO app secrets",
+          description: "Monthly rotation for corporate SSO apps",
+          status: "DONE",
+          assigneeId: null,
+          reporterName: "App Ops Staff",
+          reporterEmail: "ops@acme.example",
+          createdById: pm.id,
+          syncToJira: false,
+          syncStatus: "SKIPPED",
+        },
+        {
+          clientId: client.id,
+          projectId: project.id,
+          workDate: today,
+          category: "MANAGE_DEVICE",
+          title: "[Seed] MDM enroll laptop",
+          description: "New hire device enrollment",
+          status: "IN_PROGRESS",
+          assigneeId: null,
+          reporterName: "Device Admin",
+          reporterEmail: "devices@acme.example",
+          createdById: pm.id,
+          syncToJira: false,
+          syncStatus: "SKIPPED",
+        },
+        {
+          clientId: client.id,
+          projectId: project.id,
+          workDate: today,
+          category: "DEVELOPMENT",
+          title: "[Seed] Fix login redirect",
+          description: "Reproduce and patch redirect loop",
+          status: "OPEN",
+          assigneeId: alex.id,
+          reporterName: null,
+          reporterEmail: null,
+          createdById: pm.id,
+          syncToJira: false,
+          syncStatus: "SKIPPED",
+        },
+      ],
     });
   }
 }

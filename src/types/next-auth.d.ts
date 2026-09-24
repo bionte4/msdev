@@ -1,6 +1,7 @@
 import { DefaultSession, DefaultUser } from "next-auth";
 import { DefaultJWT } from "next-auth/jwt";
 import type { EngagementMode, Role } from "@/lib/constants";
+import type { MembershipClientSummary } from "@/lib/membership-types";
 
 declare module "next-auth" {
   interface Session {
@@ -10,6 +11,7 @@ declare module "next-auth" {
       clientId?: string | null;
       developerId?: string | null;
       engagementMode?: EngagementMode | null;
+      memberships?: MembershipClientSummary[];
     } & DefaultSession["user"];
   }
 
@@ -18,6 +20,7 @@ declare module "next-auth" {
     clientId?: string | null;
     developerId?: string | null;
     engagementMode?: EngagementMode | null;
+    memberships?: MembershipClientSummary[];
   }
 }
 
@@ -28,5 +31,6 @@ declare module "next-auth/jwt" {
     clientId?: string | null;
     developerId?: string | null;
     engagementMode?: EngagementMode | null;
+    memberships?: MembershipClientSummary[];
   }
 }

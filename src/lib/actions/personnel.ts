@@ -40,6 +40,7 @@ export interface PersonnelItem {
   endDate: string | null;
   notes: string | null;
   isActive: boolean;
+  overtimeEligible: boolean;
   canEdit: boolean;
   canDeactivate: boolean;
   canLinkJira: boolean;
@@ -80,6 +81,7 @@ function mapPersonnel(
     endDate: Date | null;
     notes: string | null;
     isActive: boolean;
+    overtimeEligible: boolean;
     user: { name: string; email: string };
   },
   perms: PersonnelPermissions,
@@ -104,6 +106,7 @@ function mapPersonnel(
     endDate: row.endDate?.toISOString().slice(0, 10) ?? null,
     notes: row.notes,
     isActive: row.isActive,
+    overtimeEligible: row.overtimeEligible,
     canEdit: perms.canEdit,
     canDeactivate: perms.canDeactivate && row.isActive,
     canLinkJira: perms.canLinkJira || (perms.canLinkOwnJira && isSelf),
@@ -274,6 +277,7 @@ export async function createPersonnel(
           startDate: parsed.data.startDate ?? new Date(),
           notes: parsed.data.notes,
           isActive: true,
+          overtimeEligible: parsed.data.overtimeEligible ?? true,
         },
         include: { user: { select: { name: true, email: true } } },
       });
@@ -369,6 +373,7 @@ export async function updatePersonnel(
           endDate: parsed.data.endDate ?? null,
           notes: parsed.data.notes ?? null,
           isActive: parsed.data.isActive,
+          overtimeEligible: parsed.data.overtimeEligible,
         },
         include: { user: { select: { name: true, email: true } } },
       });

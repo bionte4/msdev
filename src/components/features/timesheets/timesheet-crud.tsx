@@ -60,6 +60,7 @@ export interface TimesheetOption {
   name: string;
   code?: string;
   email?: string;
+  overtimeEligible?: boolean;
 }
 
 export interface TimesheetCrudProps {
@@ -67,6 +68,7 @@ export interface TimesheetCrudProps {
   projects: TimesheetOption[];
   developers: TimesheetOption[];
   currentDeveloperId?: string | null;
+  currentOvertimeEligible?: boolean;
   permissions: TimesheetPermissions;
 }
 
@@ -123,6 +125,7 @@ export function TimesheetCrud({
   projects,
   developers,
   currentDeveloperId,
+  currentOvertimeEligible = true,
   permissions,
 }: TimesheetCrudProps) {
   const router = useRouter();
@@ -141,6 +144,20 @@ export function TimesheetCrud({
   const [form, setForm] = useState<FormState>(() =>
     emptyForm(currentDeveloperId, projects[0]?.id ?? "")
   );
+
+  const formOtAllowed = useMemo(() => {
+    if (!permissions.canSelectDeveloper) {
+      return currentOvertimeEligible;
+    }
+    if (!form.developerId) return true;
+    const selected = developers.find((d) => d.id === form.developerId);
+    return selected?.overtimeEligible ?? true;
+  }, [
+    currentOvertimeEligible,
+    developers,
+    form.developerId,
+    permissions.canSelectDeveloper,
+  ]);
 
   const entries = useMemo(() => {
     if (filterDeveloperId === "all") return data.entries;
@@ -592,25 +609,34 @@ export function TimesheetCrud({
                   />
                 </div>
 
-                <div className="flex items-center gap-2 sm:col-span-2">
-                  <input
-                    id="isOvertime"
-                    type="checkbox"
-                    checked={form.isOvertime}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        isOvertime: e.target.checked,
-                      }))
-                    }
-                    className="h-3.5 w-3.5 rounded border-slate-300"
-                  />
-                  <Label
-                    htmlFor="isOvertime"
-                    className="normal-case tracking-normal"
-                  >
-                    Mark as overtime
-                  </Label>
+                <div className="flex flex-col gap-1 sm:col-span-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="isOvertime"
+                      type="checkbox"
+                      checked={form.isOvertime && formOtAllowed}
+                      disabled={!formOtAllowed}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          isOvertime: e.target.checked,
+                        }))
+                      }
+                      className="h-3.5 w-3.5 rounded border-slate-300 disabled:opacity-50"
+                    />
+                    <Label
+                      htmlFor="isOvertime"
+                      className="normal-case tracking-normal"
+                    >
+                      Mark as overtime
+                    </Label>
+                  </div>
+                  {!formOtAllowed && (
+                    <p className="text-[11px] text-amber-700">
+                      This personnel is lump-sum / OT-included — overtime flag
+                      is disabled.
+                    </p>
+                  )}
                 </div>
               </div>
 

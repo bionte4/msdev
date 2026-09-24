@@ -64,6 +64,7 @@ interface FormState {
   endDate: string;
   notes: string;
   isActive: boolean;
+  overtimeEligible: boolean;
 }
 
 function emptyForm(): FormState {
@@ -80,6 +81,7 @@ function emptyForm(): FormState {
     endDate: "",
     notes: "",
     isActive: true,
+    overtimeEligible: true,
   };
 }
 
@@ -117,6 +119,7 @@ export function PersonnelCrud({ items, permissions }: PersonnelCrudProps) {
       endDate: item.endDate ?? "",
       notes: item.notes ?? "",
       isActive: item.isActive,
+      overtimeEligible: item.overtimeEligible,
     });
     setJiraTestHint(null);
     setOpen(true);
@@ -169,6 +172,7 @@ export function PersonnelCrud({ items, permissions }: PersonnelCrudProps) {
           endDate: form.endDate ? new Date(form.endDate) : null,
           notes: form.notes || null,
           isActive: form.isActive,
+          overtimeEligible: form.overtimeEligible,
         });
         if (!result.success) {
           toast.error(result.error);
@@ -187,6 +191,7 @@ export function PersonnelCrud({ items, permissions }: PersonnelCrudProps) {
           jiraAccountEmail: form.jiraAccountEmail || null,
           startDate: form.startDate ? new Date(form.startDate) : undefined,
           notes: form.notes || undefined,
+          overtimeEligible: form.overtimeEligible,
         });
         if (!result.success) {
           toast.error(result.error);
@@ -471,6 +476,21 @@ export function PersonnelCrud({ items, permissions }: PersonnelCrudProps) {
                     }
                   />
                 </div>
+                <div className="flex items-center gap-2 sm:col-span-2">
+                  <Switch
+                    checked={form.overtimeEligible}
+                    onCheckedChange={(v) =>
+                      setForm((p) => ({ ...p, overtimeEligible: v }))
+                    }
+                  />
+                  <Label className="normal-case tracking-normal">
+                    Allow overtime
+                    <span className="mt-0.5 block text-[11px] font-normal text-slate-500">
+                      Off = lump-sum / OT included in salary (blocks OT request
+                      &amp; timesheet OT flag)
+                    </span>
+                  </Label>
+                </div>
                 {form.id && (
                   <div className="flex items-center gap-2 sm:col-span-2">
                     <Switch
@@ -655,6 +675,15 @@ export function PersonnelCrud({ items, permissions }: PersonnelCrudProps) {
                     </TableCell>
                     <TableCell className="hidden tabular-nums lg:table-cell">
                       {item.hourlyRate}/h · {item.standardCapacity}h
+                      <div className="text-[11px] font-normal">
+                        {item.overtimeEligible ? (
+                          <span className="text-emerald-700">OT allowed</span>
+                        ) : (
+                          <span className="text-amber-700">
+                            OT blocked (lump-sum)
+                          </span>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       {item.isActive ? (

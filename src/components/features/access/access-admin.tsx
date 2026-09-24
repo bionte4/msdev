@@ -39,7 +39,9 @@ import {
   type AccessPermissions,
   type AccessUserItem,
 } from "@/lib/actions/access";
+import { roleAllowsMultiClient } from "@/lib/membership-types";
 import type { Role } from "@/lib/constants";
+import { cn } from "@/lib/utils";
 
 export interface AccessAdminProps {
   items: AccessUserItem[];
@@ -53,18 +55,21 @@ interface FormState {
   name: string;
   email: string;
   role: Role;
-  clientId: string;
+  clientIds: string[];
+  primaryClientId: string;
   password: string;
   isActive: boolean;
 }
 
 function emptyForm(roles: Role[], clients: AccessClientOption[]): FormState {
   const role = roles.includes("DEVELOPER") ? "DEVELOPER" : roles[0];
+  const first = clients[0]?.id ?? "";
   return {
     name: "",
     email: "",
     role,
-    clientId: role === "SYS_ADMIN" ? "" : clients[0]?.id ?? "",
+    clientIds: role === "SYS_ADMIN" ? [] : first ? [first] : [],
+    primaryClientId: role === "SYS_ADMIN" ? "" : first,
     password: "password123",
     isActive: true,
   };
@@ -97,27 +102,66 @@ export function AccessAdmin({
   }
 
   function openEdit(item: AccessUserItem) {
+    const ids =
+      item.memberships.length > 0
+        ? item.memberships.map((m) => m.id)
+        : item.clientId
+          ? [item.clientId]
+          : [];
+    const primary =
+      item.memberships.find((m) => m.isPrimary)?.id ??
+      item.clientId ??
+      ids[0] ??
+      "";
     setForm({
       id: item.id,
       name: item.name,
       email: item.email,
       role: item.role,
-      clientId: item.clientId ?? "",
+      clientIds: ids,
+      primaryClientId: primary,
       password: "",
       isActive: item.isActive,
     });
     setOpen(true);
   }
 
+  function toggleClient(clientId: string) {
+    setForm((p) => {
+      const multi = roleAllowsMultiClient(p.role) && permissions.canAssignMultiClient;
+      if (!multi) {
+        return {
+          ...p,
+          clientIds: [clientId],
+          primaryClientId: clientId,
+        };
+      }
+      const has = p.clientIds.includes(clientId);
+      const next = has
+        ? p.clientIds.filter((id) => id !== clientId)
+        : [...p.clientIds, clientId];
+      const primary =
+        next.includes(p.primaryClientId) ? p.primaryClientId : next[0] ?? "";
+      return { ...p, clientIds: next, primaryClientId: primary };
+    });
+  }
+
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     startTransition(async () => {
+      const clientIds =
+        form.role === "SYS_ADMIN" ? [] : form.clientIds;
+      const primaryClientId =
+        form.role === "SYS_ADMIN" ? null : form.primaryClientId || clientIds[0] || null;
+
       if (form.id) {
         const result = await updateAccessUser({
           id: form.id,
           name: form.name,
           role: form.role,
-          clientId: form.role === "SYS_ADMIN" ? null : form.clientId || null,
+          clientIds,
+          primaryClientId,
+          clientId: primaryClientId,
           isActive: form.isActive,
           password: form.password || null,
         });
@@ -131,7 +175,9 @@ export function AccessAdmin({
           name: form.name,
           email: form.email,
           role: form.role,
-          clientId: form.role === "SYS_ADMIN" ? null : form.clientId || null,
+          clientIds,
+          primaryClientId,
+          clientId: primaryClientId,
           password: form.password || undefined,
           isActive: form.isActive,
         });
@@ -173,11 +219,16 @@ export function AccessAdmin({
     open &&
     ((form.id && permissions.canEdit) || (!form.id && permissions.canCreate));
 
+  const showMulti =
+    form.role !== "SYS_ADMIN" &&
+    roleAllowsMultiClient(form.role) &&
+    permissions.canAssignMultiClient;
+
   return (
     <div className="page-stack">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[12px] text-slate-500">
-          Manage login accounts, roles, and active access
+          Manage login accounts, roles, company memberships, and active access
         </p>
         {permissions.canCreate && (
           <Button size="sm" onClick={openCreate} disabled={isPending}>
@@ -195,7 +246,7 @@ export function AccessAdmin({
                 {form.id ? "Edit user access" : "Create user access"}
               </CardTitle>
               <CardDescription>
-                Role-based portal login · optional password reset on edit
+                Role-based portal login · multi-company for PM / Lead / AM
               </CardDescription>
             </div>
             <Button
@@ -239,14 +290,37 @@ export function AccessAdmin({
                   <Label>Role</Label>
                   <Select
                     value={form.role}
-                    onValueChange={(v) =>
-                      setForm((p) => ({
-                        ...p,
-                        role: v as Role,
-                        clientId:
-                          v === "SYS_ADMIN" ? "" : p.clientId || clients[0]?.id || "",
-                      }))
-                    }
+                    onValueChange={(v) => {
+                      const role = v as Role;
+                      setForm((p) => {
+                        if (role === "SYS_ADMIN") {
+                          return {
+                            ...p,
+                            role,
+                            clientIds: [],
+                            primaryClientId: "",
+                          };
+                        }
+                        const first = p.clientIds[0] || clients[0]?.id || "";
+                        const multi =
+                          roleAllowsMultiClient(role) &&
+                          permissions.canAssignMultiClient;
+                        return {
+                          ...p,
+                          role,
+                          clientIds: multi
+                            ? p.clientIds.length
+                              ? p.clientIds
+                              : first
+                                ? [first]
+                                : []
+                            : first
+                              ? [first]
+                              : [],
+                          primaryClientId: first,
+                        };
+                      });
+                    }}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -260,28 +334,92 @@ export function AccessAdmin({
                     </SelectContent>
                   </Select>
                 </div>
+
                 {form.role !== "SYS_ADMIN" && (
-                  <div className="space-y-1">
-                    <Label>Client</Label>
-                    <Select
-                      value={form.clientId}
-                      onValueChange={(v) =>
-                        setForm((p) => ({ ...p, clientId: v }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select client" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {clients.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>
-                            {c.name} ({c.code})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  <div className="space-y-1 sm:col-span-2">
+                    <Label>
+                      {showMulti ? "Companies (multi)" : "Company"}
+                    </Label>
+                    {showMulti ? (
+                      <div className="grid gap-1.5 rounded-md border border-slate-200 p-2 sm:grid-cols-2">
+                        {clients.map((c) => {
+                          const checked = form.clientIds.includes(c.id);
+                          return (
+                            <label
+                              key={c.id}
+                              className={cn(
+                                "flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-[12px] hover:bg-slate-50",
+                                checked && "bg-slate-50"
+                              )}
+                            >
+                              <input
+                                type="checkbox"
+                                className="mt-0.5"
+                                checked={checked}
+                                onChange={() => toggleClient(c.id)}
+                              />
+                              <span>
+                                <span className="block font-medium text-slate-900">
+                                  {c.name}
+                                </span>
+                                <span className="text-[11px] text-slate-500">
+                                  {c.code}
+                                </span>
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <Select
+                        value={form.clientIds[0] ?? ""}
+                        onValueChange={(v) =>
+                          setForm((p) => ({
+                            ...p,
+                            clientIds: [v],
+                            primaryClientId: v,
+                          }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select company" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {clients.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.name} ({c.code})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    {showMulti && form.clientIds.length > 1 && (
+                      <div className="mt-2 space-y-1">
+                        <Label>Primary / default company</Label>
+                        <Select
+                          value={form.primaryClientId}
+                          onValueChange={(v) =>
+                            setForm((p) => ({ ...p, primaryClientId: v }))
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Primary company" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {clients
+                              .filter((c) => form.clientIds.includes(c.id))
+                              .map((c) => (
+                                <SelectItem key={c.id} value={c.id}>
+                                  {c.name} ({c.code})
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
                   </div>
                 )}
+
                 <div className="space-y-1 sm:col-span-2">
                   <Label htmlFor="access-password">
                     {form.id ? "New password (optional)" : "Temp password"}
@@ -334,7 +472,7 @@ export function AccessAdmin({
               <TableRow>
                 <TableHead>User</TableHead>
                 <TableHead>Role</TableHead>
-                <TableHead className="hidden md:table-cell">Client</TableHead>
+                <TableHead className="hidden md:table-cell">Companies</TableHead>
                 <TableHead>Status</TableHead>
                 {(permissions.canEdit || permissions.canDeactivate) && (
                   <TableHead className="w-[88px]">Actions</TableHead>
@@ -366,9 +504,23 @@ export function AccessAdmin({
                     </TableCell>
                     <TableCell>{roleBadge(item.role)}</TableCell>
                     <TableCell className="hidden md:table-cell">
-                      {item.clientName
-                        ? `${item.clientName} (${item.clientCode})`
-                        : "—"}
+                      {item.memberships.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {item.memberships.map((m) => (
+                            <Badge
+                              key={m.id}
+                              variant={m.isPrimary ? "success" : "secondary"}
+                            >
+                              {m.code}
+                              {m.isPrimary ? " · primary" : ""}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : item.clientName ? (
+                        `${item.clientName} (${item.clientCode})`
+                      ) : (
+                        "—"
+                      )}
                     </TableCell>
                     <TableCell>
                       {item.isActive ? (

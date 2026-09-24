@@ -26,7 +26,10 @@ export default async function DashboardLayout({
       />
       <main className="min-w-0 flex-1 overflow-auto">
         <div className="mx-auto max-w-7xl px-3 py-4 sm:px-5 lg:px-6 lg:py-5">
-          <DashboardTopbar />
+          <DashboardTopbar
+            memberships={session.user.memberships ?? []}
+            activeClientId={session.user.clientId ?? null}
+          />
           {children}
         </div>
       </main>

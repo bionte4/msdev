@@ -120,6 +120,12 @@ export async function createOvertimeRequest(
       return fail("Developer not found");
     }
 
+    if (!developer.overtimeEligible) {
+      return fail(
+        "You are not eligible for overtime (salary is lump-sum / OT already included). Contact Vendor Lead if this is incorrect."
+      );
+    }
+
     const request = await prisma.overtimeRequest.create({
       data: {
         developerId,
@@ -283,6 +289,53 @@ export async function listOvertimeRequests(): Promise<
       error instanceof Error
         ? error.message
         : "Failed to list overtime requests";
+    return fail(message);
+  }
+}
+
+export async function getMyOvertimeEligibility(): Promise<
+  ActionResult<{ eligible: boolean; reason: string | null }>
+> {
+  try {
+    const session = await auth();
+    assertRole(session, [
+      "DEVELOPER",
+      "VENDOR_LEAD",
+      "SYS_ADMIN",
+      "CLIENT_PM",
+      "VENDOR_AM",
+    ]);
+
+    if (!session.user.developerId) {
+      return ok({
+        eligible: false,
+        reason: "No developer profile linked to this account",
+      });
+    }
+
+    const developer = await prisma.developer.findUnique({
+      where: { id: session.user.developerId },
+      select: { overtimeEligible: true },
+    });
+
+    if (!developer) {
+      return ok({ eligible: false, reason: "Developer profile not found" });
+    }
+
+    if (!developer.overtimeEligible) {
+      return ok({
+        eligible: false,
+        reason:
+          "Not eligible for overtime — salary is lump-sum / OT already included. Ask Vendor Lead to change this in Personnel if incorrect.",
+      });
+    }
+
+    return ok({ eligible: true, reason: null });
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to load overtime eligibility";
     return fail(message);
   }
 }

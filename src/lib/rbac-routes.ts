@@ -5,12 +5,11 @@ import { getEffectiveRoles, hasEffectiveRole } from "@/lib/effective-roles";
 export function homePathForRole(role: Role | string | null | undefined): string {
   switch (role) {
     case "DEVELOPER":
-      return "/timesheets";
     case "SYS_ADMIN":
     case "CLIENT_PM":
     case "VENDOR_LEAD":
     case "VENDOR_AM":
-      return "/capacity";
+      return "/dashboard";
     default:
       return "/login";
   }
@@ -18,6 +17,13 @@ export function homePathForRole(role: Role | string | null | undefined): string 
 
 /** Roles allowed to open each dashboard route (must stay in sync with sidebar). */
 export const ROUTE_ROLES: Record<string, readonly Role[]> = {
+  "/dashboard": [
+    "SYS_ADMIN",
+    "CLIENT_PM",
+    "VENDOR_LEAD",
+    "VENDOR_AM",
+    "DEVELOPER",
+  ],
   "/capacity": ["SYS_ADMIN", "CLIENT_PM", "VENDOR_LEAD", "VENDOR_AM"],
   "/clients": ["SYS_ADMIN", "CLIENT_PM", "VENDOR_LEAD", "VENDOR_AM"],
   "/projects": [
@@ -71,6 +77,13 @@ export const ROUTE_ROLES: Record<string, readonly Role[]> = {
     "DEVELOPER",
   ],
   "/scope-swaps": ["SYS_ADMIN", "CLIENT_PM", "VENDOR_LEAD", "VENDOR_AM"],
+  "/tickets": [
+    "SYS_ADMIN",
+    "CLIENT_PM",
+    "VENDOR_LEAD",
+    "VENDOR_AM",
+    "DEVELOPER",
+  ],
   "/reports": [
     "SYS_ADMIN",
     "CLIENT_PM",

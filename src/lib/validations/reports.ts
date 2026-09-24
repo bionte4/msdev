@@ -7,6 +7,7 @@ export const reportTypes = [
   "overtime",
   "evaluations",
   "personnel",
+  "tickets",
 ] as const;
 
 export type ReportType = (typeof reportTypes)[number];
@@ -43,4 +44,5 @@ export const REPORT_TYPE_LABELS: Record<ReportType, string> = {
   overtime: "Overtime",
   evaluations: "Evaluations",
   personnel: "Personnel roster",
+  tickets: "Operational tickets",
 };

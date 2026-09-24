@@ -109,6 +109,29 @@ enum NotificationType {
   ALERT
 }
 
+enum TicketWorkCategory {
+  DEVELOPMENT
+  MANAGE_APPS
+  MANAGE_DEVICE
+  SUPPORT
+  ACCESS
+  OTHER
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+enum TicketSyncStatus {
+  NOT_SYNCED
+  SYNCED
+  FAILED
+  SKIPPED
+}
+
 model Client {
   id              String         @id @default(cuid())
   name            String
@@ -119,12 +142,31 @@ model Client {
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   users           User[]
+  memberships     ClientMembership[]
   developers      Developer[]
   projects        Project[]
   evaluations     MonthlyEvaluation[]
   scopeSwaps      ScopeSwap[]
   replacements    ReplacementTicket[]
   coverages       CoverageAssignment[]
+  operationalTickets OperationalTicket[]
+}
+
+/// Multi-company access: one user (e.g. CLIENT_PM) can belong to many Clients.
+/// User.clientId is the active/primary client used for session scoping.
+model ClientMembership {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, clientId])
+  @@index([clientId])
+  @@index([userId, isPrimary])
 }
 
 model User {
@@ -133,10 +175,12 @@ model User {
   name           String
   passwordHash   String?
   role           Role
+  /// Active / primary client for JWT scoping (must be one of memberships when role is tenant-bound).
   clientId       String?
   client         Client?    @relation(fields: [clientId], references: [id])
   isActive       Boolean    @default(true)
   developer      Developer?
+  memberships    ClientMembership[]
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
   accounts       Account[]
@@ -144,6 +188,7 @@ model User {
   evaluationsAsPm MonthlyEvaluation[] @relation("EvaluatedBy")
   scopeSwapsRequested ScopeSwap[] @relation("ScopeSwapRequester")
   notifications  Notification[]
+  ticketsCreated OperationalTicket[] @relation("TicketCreator")
 }
 
 model Notification {
@@ -212,6 +257,8 @@ model Developer {
   notes            String?
   skillTags        String[]
   isActive         Boolean             @default(true)
+  /// false = lump-sum / OT included in salary → cannot request or log overtime.
+  overtimeEligible Boolean             @default(true)
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
   timesheets       Timesheet[]
@@ -228,6 +275,7 @@ model Developer {
   scopeSwapsOut    ScopeSwap[]         @relation("ScopeSwapOut")
   coveragesAsAbsent CoverageAssignment[] @relation("CoverageAbsent")
   coveragesAsCover  CoverageAssignment[] @relation("CoverageCover")
+  operationalTickets OperationalTicket[]
 }
 
 model Project {
@@ -242,8 +290,43 @@ model Project {
   timesheets  Timesheet[]
   scopeSwaps  ScopeSwap[]
   coverages   CoverageAssignment[]
+  operationalTickets OperationalTicket[]
 
   @@unique([clientId, code])
+}
+
+model OperationalTicket {
+  id            String             @id @default(cuid())
+  clientId      String
+  client        Client             @relation(fields: [clientId], references: [id])
+  projectId     String
+  project       Project            @relation(fields: [projectId], references: [id])
+  workDate      DateTime           @db.Date
+  category      TicketWorkCategory
+  title         String
+  description   String?
+  status        TicketStatus       @default(OPEN)
+  /// Optional linked developer (dev staff). Leave null for non-dev / free-text reporter.
+  assigneeId    String?
+  assignee      Developer?         @relation(fields: [assigneeId], references: [id])
+  /// Free-text reporter for non-dev staff without a developer profile.
+  reporterName  String?
+  reporterEmail String?
+  createdById   String
+  createdBy     User               @relation("TicketCreator", fields: [createdById], references: [id])
+  syncToJira    Boolean            @default(false)
+  jiraIssueKey  String?
+  jiraIssueId   String?
+  syncStatus    TicketSyncStatus   @default(NOT_SYNCED)
+  syncMessage   String?
+  notes         String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@index([clientId, workDate])
+  @@index([projectId, workDate])
+  @@index([status, workDate])
+  @@index([category, workDate])
 }
 
 model Timesheet {

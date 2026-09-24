@@ -17,7 +17,8 @@ capacity, personnel, timesheets, overtime, evaluations, coverage, development, a
 
 | Route | Feature |
 | --- | --- |
-| `/capacity` | Weekly capacity dashboard |
+| `/dashboard` | Role-scoped home KPIs & attention queue |
+| `/capacity` | Weekly capacity utilization |
 | `/clients` | Client organizations (tenant) |
 | `/projects` | Project CRUD · timesheet & scope-swap targets |
 | `/personnel` | Developer roster + leave (cuti/sakit) CRUD |
@@ -28,6 +29,7 @@ capacity, personnel, timesheets, overtime, evaluations, coverage, development, a
 | `/evaluations` | Monthly scorecard + replacement ticket |
 | `/leaderboard` | Ranking by evaluation, rewards, or hours |
 | `/scope-swaps` | 1-in / 1-out scope swap |
+| `/tickets` | Operational tickets · daily + Excel bulk · monthly summary · optional Jira |
 | `/reports` | Operational reports · Excel export |
 | `/access` | User access admin (activate / roles) |
 | `/integrations` | Email, SMTP, Jira, ServiceNow config |
@@ -41,6 +43,7 @@ Server Actions enforce `assertRole` and tenant/`developerId` scope.
 
 | Menu | SYS_ADMIN | CLIENT_PM | VENDOR_LEAD | VENDOR_AM | DEVELOPER |
 | --- | --- | --- | --- | --- | --- |
+| Dashboard | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Capacity | ✓ | ✓ | ✓ | ✓ | — |
 | Clients | ✓ | ✓ | ✓ | ✓ | — |
 | Projects | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -52,6 +55,7 @@ Server Actions enforce `assertRole` and tenant/`developerId` scope.
 | Evaluations | ✓ | ✓ | ✓ | ✓ | — |
 | Leaderboard | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Scope swaps | ✓ | ✓ | ✓ | ✓ | — |
+| Tickets | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Reports | ✓ | ✓ | ✓ | ✓ | ✓ |
 | User access | ✓ | — | ✓ | — | — |
 | Integrations | ✓ | — | ✓ | — | — |
@@ -77,7 +81,16 @@ Set on **Clients** (SYS_ADMIN). Demo seed: **ACME = BODY_SHOPPING**, **NOVA = MA
 
 Effective roles are computed in `src/lib/effective-roles.ts` and applied to `assertRole`, sidebar, and permission flags.
 
-Post-login home: DEVELOPER → `/timesheets`; other roles → `/capacity`.
+### Multi-company membership
+
+- Tenant = **Client** (company). One company has many **Projects**.
+- `CLIENT_PM` / `VENDOR_LEAD` / `VENDOR_AM` may belong to **multiple companies** via `ClientMembership`.
+- `User.clientId` = **active** company (session scoping for all CRUD).
+- Topbar **company switcher** changes the active company (JWT + primary membership).
+- Assign memberships in **User access** (SYS_ADMIN): multi-select companies + primary.
+- Demo: `pm@acme.example` is member of **ACME + NOVA**.
+
+Post-login home: all roles → `/dashboard` (role-scoped KPIs).
 
 ## Local setup
 

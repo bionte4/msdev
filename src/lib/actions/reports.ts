@@ -321,6 +321,7 @@ async function buildReportRows(
           { key: "jobTitle", label: "Title" },
           { key: "hourlyRate", label: "Hourly rate" },
           { key: "capacity", label: "Weekly capacity" },
+          { key: "overtimeEligible", label: "OT eligible" },
           { key: "jiraAccount", label: "Jira account" },
           { key: "status", label: "Status" },
           { key: "skills", label: "Skills" },
@@ -331,9 +332,64 @@ async function buildReportRows(
           jobTitle: i.jobTitle,
           hourlyRate: toNumber(i.hourlyRate),
           capacity: toNumber(i.standardCapacity),
+          overtimeEligible: i.overtimeEligible ? "Yes" : "No (lump-sum)",
           jiraAccount: i.jiraAccountEmail ?? "",
           status: i.isActive ? "Active" : "Inactive",
           skills: i.skillTags.join(", "),
+        })),
+      };
+    }
+    case "tickets": {
+      const ticketWhere: Record<string, unknown> = {
+        workDate: { gte: fromD, lte: toD },
+      };
+      if (session.user.role === "DEVELOPER") {
+        ticketWhere.OR = [
+          { assigneeId: session.user.developerId ?? "__none__" },
+          { createdById: session.user.id },
+        ];
+      } else if (session.user.role !== "SYS_ADMIN" && session.user.clientId) {
+        ticketWhere.clientId = session.user.clientId;
+      }
+
+      const tickets = await prisma.operationalTicket.findMany({
+        where: ticketWhere,
+        include: {
+          project: { select: { name: true, code: true } },
+          assignee: {
+            include: { user: { select: { name: true, email: true } } },
+          },
+          createdBy: { select: { name: true } },
+        },
+        orderBy: [{ workDate: "asc" }, { createdAt: "asc" }],
+      });
+
+      return {
+        columns: [
+          { key: "workDate", label: "Work date" },
+          { key: "project", label: "Project" },
+          { key: "projectCode", label: "Project code" },
+          { key: "category", label: "Category" },
+          { key: "title", label: "Title" },
+          { key: "status", label: "Status" },
+          { key: "assignee", label: "Assignee" },
+          { key: "reporter", label: "Reporter (non-dev)" },
+          { key: "jiraKey", label: "Jira key" },
+          { key: "syncStatus", label: "Sync" },
+          { key: "createdBy", label: "Created by" },
+        ],
+        rows: tickets.map((t) => ({
+          workDate: isoDate(t.workDate),
+          project: t.project.name,
+          projectCode: t.project.code,
+          category: t.category,
+          title: t.title,
+          status: t.status,
+          assignee: t.assignee?.user.name ?? "",
+          reporter: t.reporterName ?? "",
+          jiraKey: t.jiraIssueKey ?? "",
+          syncStatus: t.syncStatus,
+          createdBy: t.createdBy.name,
         })),
       };
     }
@@ -478,6 +534,7 @@ export async function exportAllReportsExcel(input: {
       "overtime",
       "evaluations",
       "personnel",
+      "tickets",
     ];
 
     for (const type of types) {

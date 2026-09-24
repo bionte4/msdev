@@ -4,6 +4,7 @@ import {
   getDevelopersForTimesheet,
   listTimesheets,
 } from "@/lib/actions/timesheets";
+import { getMyOvertimeEligibility } from "@/lib/actions/overtime";
 import { TimesheetCrud } from "@/components/features/timesheets/timesheet-crud";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -39,21 +40,23 @@ export default async function TimesheetsPage() {
     "SYS_ADMIN"
   );
 
-  const [listResult, projectsResult, developersResult] = await Promise.all([
-    listTimesheets({}),
-    canMutate
-      ? getActiveProjectsForTimesheet()
-      : Promise.resolve({ success: true as const, data: [] }),
-    session?.user.role === "DEVELOPER"
-      ? Promise.resolve({ success: true as const, data: [] })
-      : getDevelopersForTimesheet(),
-  ]);
+  const [listResult, projectsResult, developersResult, eligibilityResult] =
+    await Promise.all([
+      listTimesheets({}),
+      canMutate
+        ? getActiveProjectsForTimesheet()
+        : Promise.resolve({ success: true as const, data: [] }),
+      session?.user.role === "DEVELOPER"
+        ? Promise.resolve({ success: true as const, data: [] })
+        : getDevelopersForTimesheet(),
+      getMyOvertimeEligibility(),
+    ]);
 
   return (
     <div className="page-stack">
       <PageHeader
         title="Timesheets"
-        description="Daily max 16h · Weekly warning 45h · Hard cap 50h"
+        description="Daily max 16h · Weekly warning 45h · Hard cap 50h · OT blocked for lump-sum staff"
         actions={
           <Badge variant="secondary">
             {roleHint(session?.user.role, session?.user.engagementMode)}
@@ -67,6 +70,9 @@ export default async function TimesheetsPage() {
           projects={projectsResult.success ? projectsResult.data : []}
           developers={developersResult.success ? developersResult.data : []}
           currentDeveloperId={session?.user.developerId}
+          currentOvertimeEligible={
+            eligibilityResult.success ? eligibilityResult.data.eligible : true
+          }
           permissions={listResult.data.permissions}
         />
       ) : (

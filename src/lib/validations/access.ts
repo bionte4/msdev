@@ -32,11 +32,20 @@ export type MarkNotificationReadInput = z.infer<
 >;
 export type CreateNotificationInput = z.infer<typeof createNotificationSchema>;
 
+const clientIdsField = z
+  .array(z.string().min(1))
+  .max(50)
+  .optional()
+  .default([]);
+
 export const createAccessUserSchema = z.object({
   name: z.string().min(2).max(120),
   email: z.string().email(),
   role: z.enum(accessRoles),
+  /** @deprecated prefer clientIds; kept for single-client callers */
   clientId: z.string().optional().nullable(),
+  clientIds: clientIdsField,
+  primaryClientId: z.string().optional().nullable(),
   password: z.string().min(8).max(72).optional(),
   isActive: z.boolean().optional(),
 });
@@ -46,6 +55,8 @@ export const updateAccessUserSchema = z.object({
   name: z.string().min(2).max(120),
   role: z.enum(accessRoles),
   clientId: z.string().optional().nullable(),
+  clientIds: clientIdsField,
+  primaryClientId: z.string().optional().nullable(),
   isActive: z.boolean(),
   password: z.string().min(8).max(72).optional().nullable(),
 });

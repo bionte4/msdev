@@ -7,6 +7,10 @@ import { mergePerms, hasEffectiveRole } from "@/lib/effective-roles";
 import type { Role } from "@/lib/constants";
 import { ALL_ROLES } from "@/lib/constants";
 import {
+  roleAllowsMultiClient,
+  syncUserMemberships,
+} from "@/lib/client-membership";
+import {
   createAccessUserSchema,
   setAccessUserActiveSchema,
   updateAccessUserSchema,
@@ -16,6 +20,13 @@ import {
 } from "@/lib/validations/access";
 import { fail, ok, type ActionResult } from "@/types/actions";
 
+export interface AccessMembershipItem {
+  id: string;
+  name: string;
+  code: string;
+  isPrimary: boolean;
+}
+
 export interface AccessUserItem {
   id: string;
   name: string;
@@ -24,6 +35,7 @@ export interface AccessUserItem {
   clientId: string | null;
   clientName: string | null;
   clientCode: string | null;
+  memberships: AccessMembershipItem[];
   isActive: boolean;
   hasDeveloper: boolean;
   createdAt: string;
@@ -42,6 +54,7 @@ export interface AccessPermissions {
   canEdit: boolean;
   canDeactivate: boolean;
   canAssignAnyRole: boolean;
+  canAssignMultiClient: boolean;
 }
 
 function accessPerms(role: Role): AccessPermissions {
@@ -50,6 +63,7 @@ function accessPerms(role: Role): AccessPermissions {
     canEdit: role === "SYS_ADMIN" || role === "VENDOR_LEAD",
     canDeactivate: role === "SYS_ADMIN" || role === "VENDOR_LEAD",
     canAssignAnyRole: role === "SYS_ADMIN",
+    canAssignMultiClient: role === "SYS_ADMIN",
   };
 }
 
@@ -64,6 +78,10 @@ function mapUser(
     createdAt: Date;
     client: { name: string; code: string } | null;
     developer: { id: string } | null;
+    memberships: {
+      isPrimary: boolean;
+      client: { id: string; name: string; code: string };
+    }[];
   },
   session: NonNullable<Awaited<ReturnType<typeof auth>>>,
   perms: AccessPermissions
@@ -71,6 +89,13 @@ function mapUser(
   const isSelf = row.id === session.user.id;
   const isProtectedAdmin =
     row.role === "SYS_ADMIN" && session.user.role !== "SYS_ADMIN";
+
+  const memberships: AccessMembershipItem[] = row.memberships.map((m) => ({
+    id: m.client.id,
+    name: m.client.name,
+    code: m.client.code,
+    isPrimary: m.isPrimary,
+  }));
 
   return {
     id: row.id,
@@ -80,6 +105,7 @@ function mapUser(
     clientId: row.clientId,
     clientName: row.client?.name ?? null,
     clientCode: row.client?.code ?? null,
+    memberships,
     isActive: row.isActive,
     hasDeveloper: Boolean(row.developer),
     createdAt: row.createdAt.toISOString(),
@@ -88,24 +114,79 @@ function mapUser(
   };
 }
 
+const userInclude = {
+  client: { select: { name: true, code: true } },
+  developer: { select: { id: true } },
+  memberships: {
+    include: {
+      client: { select: { id: true, name: true, code: true } },
+    },
+    orderBy: [{ isPrimary: "desc" as const }, { createdAt: "asc" as const }],
+  },
+};
+
+function resolveClientIds(input: {
+  role: Role;
+  clientId?: string | null;
+  clientIds?: string[];
+  primaryClientId?: string | null;
+  actorIsAdmin: boolean;
+  actorClientId: string | null | undefined;
+}): { clientIds: string[]; primaryClientId: string | null } {
+  if (input.role === "SYS_ADMIN") {
+    return { clientIds: [], primaryClientId: null };
+  }
+
+  if (!input.actorIsAdmin) {
+    const id = input.actorClientId;
+    if (!id) throw new Error("Your account has no active client");
+    return { clientIds: [id], primaryClientId: id };
+  }
+
+  const fromArray = (input.clientIds ?? []).filter(Boolean);
+  const merged = Array.from(
+    new Set([
+      ...fromArray,
+      ...(input.clientId ? [input.clientId] : []),
+    ])
+  );
+
+  if (merged.length === 0) {
+    throw new Error("Client is required for non-admin roles");
+  }
+
+  if (!roleAllowsMultiClient(input.role) && merged.length > 1) {
+    return {
+      clientIds: [merged[0]],
+      primaryClientId: merged[0],
+    };
+  }
+
+  const primary =
+    (input.primaryClientId && merged.includes(input.primaryClientId)
+      ? input.primaryClientId
+      : null) ?? merged[0];
+
+  return { clientIds: merged, primaryClientId: primary };
+}
+
 function validateRoleAssignment(
   actorRole: Role,
   engagementMode: string | null | undefined,
   targetRole: Role,
-  clientId: string | null | undefined
+  clientIds: string[]
 ): string | null {
-  if (targetRole !== "SYS_ADMIN" && !clientId) {
+  if (targetRole !== "SYS_ADMIN" && clientIds.length === 0) {
     return "Client is required for non-admin roles";
   }
-  if (targetRole === "SYS_ADMIN" && clientId) {
+  if (targetRole === "SYS_ADMIN" && clientIds.length > 0) {
     return "SYS_ADMIN should not be tied to a client";
   }
-  // Vendor Lead and body-shopping Client PM (effective Lead) share this limit.
   if (
     actorRole !== "SYS_ADMIN" &&
     hasEffectiveRole(actorRole, engagementMode, "VENDOR_LEAD")
   ) {
-    const allowed: Role[] = ["VENDOR_AM", "DEVELOPER", "VENDOR_LEAD"];
+    const allowed: Role[] = ["VENDOR_LEAD", "VENDOR_AM", "DEVELOPER"];
     if (!allowed.includes(targetRole)) {
       return "Can only manage VENDOR_LEAD / VENDOR_AM / DEVELOPER for this client";
     }
@@ -124,7 +205,11 @@ export async function listAccessUsers(): Promise<
   try {
     const session = await auth();
     assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD"]);
-    const perms = mergePerms(session.user.role, session.user.engagementMode, accessPerms);
+    const perms = mergePerms(
+      session.user.role,
+      session.user.engagementMode,
+      accessPerms
+    );
 
     const isLeadScoped =
       session.user.role !== "SYS_ADMIN" &&
@@ -134,21 +219,23 @@ export async function listAccessUsers(): Promise<
         "VENDOR_LEAD"
       );
 
+    const activeClientId = session.user.clientId ?? "__none__";
+
     const where =
       session.user.role === "SYS_ADMIN"
         ? {}
         : {
-            clientId: session.user.clientId ?? "__none__",
             role: { in: ["VENDOR_LEAD", "VENDOR_AM", "DEVELOPER"] as Role[] },
+            OR: [
+              { clientId: activeClientId },
+              { memberships: { some: { clientId: activeClientId } } },
+            ],
           };
 
     const [rows, clients] = await Promise.all([
       prisma.user.findMany({
         where,
-        include: {
-          client: { select: { name: true, code: true } },
-          developer: { select: { id: true } },
-        },
+        include: userInclude,
         orderBy: [{ isActive: "desc" }, { name: "asc" }],
       }),
       session.user.role === "SYS_ADMIN"
@@ -174,11 +261,7 @@ export async function listAccessUsers(): Promise<
 
     return ok({
       items: rows.map((r) =>
-        mapUser(
-          { ...r, role: r.role as Role },
-          session,
-          perms
-        )
+        mapUser({ ...r, role: r.role as Role }, session, perms)
       ),
       permissions: perms,
       clients,
@@ -197,7 +280,11 @@ export async function createAccessUser(
   try {
     const session = await auth();
     assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD"]);
-    const perms = mergePerms(session.user.role, session.user.engagementMode, accessPerms);
+    const perms = mergePerms(
+      session.user.role,
+      session.user.engagementMode,
+      accessPerms
+    );
     if (!perms.canCreate) return fail("Unauthorized to create users");
 
     const parsed = createAccessUserSchema.safeParse(input);
@@ -206,18 +293,25 @@ export async function createAccessUser(
     }
 
     const role = parsed.data.role as Role;
-    const clientId =
-      session.user.role === "SYS_ADMIN"
-        ? role === "SYS_ADMIN"
-          ? null
-          : parsed.data.clientId || null
-        : session.user.clientId;
+    let resolved: { clientIds: string[]; primaryClientId: string | null };
+    try {
+      resolved = resolveClientIds({
+        role,
+        clientId: parsed.data.clientId,
+        clientIds: parsed.data.clientIds,
+        primaryClientId: parsed.data.primaryClientId,
+        actorIsAdmin: session.user.role === "SYS_ADMIN",
+        actorClientId: session.user.clientId,
+      });
+    } catch (e) {
+      return fail(e instanceof Error ? e.message : "Invalid clients");
+    }
 
     const roleError = validateRoleAssignment(
       session.user.role,
       session.user.engagementMode,
       role,
-      clientId
+      resolved.clientIds
     );
     if (roleError) return fail(roleError);
 
@@ -237,14 +331,22 @@ export async function createAccessUser(
         name: parsed.data.name,
         email: parsed.data.email.toLowerCase(),
         role,
-        clientId,
+        clientId: resolved.primaryClientId,
         passwordHash,
         isActive: parsed.data.isActive ?? true,
       },
-      include: {
-        client: { select: { name: true, code: true } },
-        developer: { select: { id: true } },
-      },
+    });
+
+    await syncUserMemberships({
+      userId: created.id,
+      role,
+      clientIds: resolved.clientIds,
+      primaryClientId: resolved.primaryClientId,
+    });
+
+    const withRelations = await prisma.user.findUniqueOrThrow({
+      where: { id: created.id },
+      include: userInclude,
     });
 
     await prisma.notification.create({
@@ -252,13 +354,17 @@ export async function createAccessUser(
         userId: created.id,
         title: "Welcome to Governance Portal",
         body: `Your account was created with role ${role}. Default password may apply — change it after first login.`,
-        href: "/capacity",
+        href: "/dashboard",
         type: "INFO",
       },
     });
 
     return ok(
-      mapUser({ ...created, role: created.role as Role }, session, perms)
+      mapUser(
+        { ...withRelations, role: withRelations.role as Role },
+        session,
+        perms
+      )
     );
   } catch (error) {
     const message =
@@ -273,7 +379,11 @@ export async function updateAccessUser(
   try {
     const session = await auth();
     assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD"]);
-    const perms = mergePerms(session.user.role, session.user.engagementMode, accessPerms);
+    const perms = mergePerms(
+      session.user.role,
+      session.user.engagementMode,
+      accessPerms
+    );
     if (!perms.canEdit) return fail("Unauthorized to edit users");
 
     const parsed = updateAccessUserSchema.safeParse(input);
@@ -283,37 +393,45 @@ export async function updateAccessUser(
 
     const existing = await prisma.user.findUnique({
       where: { id: parsed.data.id },
+      include: { memberships: { select: { clientId: true } } },
     });
     if (!existing) return fail("User not found");
 
-    if (
-      session.user.role !== "SYS_ADMIN" &&
-      (existing.role === "SYS_ADMIN" ||
-        existing.clientId !== session.user.clientId)
-    ) {
-      return fail("Unauthorized to edit this user");
+    if (session.user.role !== "SYS_ADMIN") {
+      const sameClient =
+        existing.clientId === session.user.clientId ||
+        existing.memberships.some(
+          (m) => m.clientId === session.user.clientId
+        );
+      if (existing.role === "SYS_ADMIN" || !sameClient) {
+        return fail("Unauthorized to edit this user");
+      }
     }
 
     const role = parsed.data.role as Role;
-    const clientId =
-      session.user.role === "SYS_ADMIN"
-        ? role === "SYS_ADMIN"
-          ? null
-          : parsed.data.clientId || null
-        : session.user.clientId;
+    let resolved: { clientIds: string[]; primaryClientId: string | null };
+    try {
+      resolved = resolveClientIds({
+        role,
+        clientId: parsed.data.clientId,
+        clientIds: parsed.data.clientIds,
+        primaryClientId: parsed.data.primaryClientId,
+        actorIsAdmin: session.user.role === "SYS_ADMIN",
+        actorClientId: session.user.clientId,
+      });
+    } catch (e) {
+      return fail(e instanceof Error ? e.message : "Invalid clients");
+    }
 
     const roleError = validateRoleAssignment(
       session.user.role,
       session.user.engagementMode,
       role,
-      clientId
+      resolved.clientIds
     );
     if (roleError) return fail(roleError);
 
-    if (
-      existing.id === session.user.id &&
-      !parsed.data.isActive
-    ) {
+    if (existing.id === session.user.id && !parsed.data.isActive) {
       return fail("You cannot deactivate your own account");
     }
 
@@ -322,19 +440,27 @@ export async function updateAccessUser(
         ? await hash(parsed.data.password, 10)
         : undefined;
 
-    const updated = await prisma.user.update({
+    await prisma.user.update({
       where: { id: existing.id },
       data: {
         name: parsed.data.name,
         role,
-        clientId,
+        clientId: resolved.primaryClientId,
         isActive: parsed.data.isActive,
         ...(passwordHash ? { passwordHash } : {}),
       },
-      include: {
-        client: { select: { name: true, code: true } },
-        developer: { select: { id: true } },
-      },
+    });
+
+    await syncUserMemberships({
+      userId: existing.id,
+      role,
+      clientIds: resolved.clientIds,
+      primaryClientId: resolved.primaryClientId,
+    });
+
+    const updated = await prisma.user.findUniqueOrThrow({
+      where: { id: existing.id },
+      include: userInclude,
     });
 
     if (existing.role !== role || existing.isActive !== parsed.data.isActive) {
@@ -343,7 +469,7 @@ export async function updateAccessUser(
           userId: updated.id,
           title: "Account access updated",
           body: `Your access was updated by an administrator. Role: ${role}. Status: ${parsed.data.isActive ? "Active" : "Inactive"}.`,
-          href: "/capacity",
+          href: "/dashboard",
           type: "WARNING",
         },
       });
@@ -365,7 +491,11 @@ export async function setAccessUserActive(
   try {
     const session = await auth();
     assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD"]);
-    const perms = mergePerms(session.user.role, session.user.engagementMode, accessPerms);
+    const perms = mergePerms(
+      session.user.role,
+      session.user.engagementMode,
+      accessPerms
+    );
     if (!perms.canDeactivate) return fail("Unauthorized");
 
     const parsed = setAccessUserActiveSchema.safeParse(input);
@@ -377,24 +507,29 @@ export async function setAccessUserActive(
 
     const existing = await prisma.user.findUnique({
       where: { id: parsed.data.id },
+      include: { memberships: { select: { clientId: true } } },
     });
     if (!existing) return fail("User not found");
 
-    if (
-      session.user.role !== "SYS_ADMIN" &&
-      (existing.role === "SYS_ADMIN" ||
-        existing.clientId !== session.user.clientId)
-    ) {
-      return fail("Unauthorized to update this user");
+    if (session.user.role !== "SYS_ADMIN") {
+      const sameClient =
+        existing.clientId === session.user.clientId ||
+        existing.memberships.some(
+          (m) => m.clientId === session.user.clientId
+        );
+      if (existing.role === "SYS_ADMIN" || !sameClient) {
+        return fail("Unauthorized to update this user");
+      }
     }
 
-    const updated = await prisma.user.update({
-      where: { id: existing.id },
+    await prisma.user.update({
+      where: { id: parsed.data.id },
       data: { isActive: parsed.data.isActive },
-      include: {
-        client: { select: { name: true, code: true } },
-        developer: { select: { id: true } },
-      },
+    });
+
+    const updated = await prisma.user.findUniqueOrThrow({
+      where: { id: parsed.data.id },
+      include: userInclude,
     });
 
     await prisma.notification.create({
@@ -406,7 +541,7 @@ export async function setAccessUserActive(
         body: parsed.data.isActive
           ? "Your portal access has been restored."
           : "Your portal access has been deactivated. Contact your administrator.",
-        href: "/capacity",
+        href: "/dashboard",
         type: parsed.data.isActive ? "SUCCESS" : "ALERT",
       },
     });

@@ -29,6 +29,7 @@ export const createPersonnelSchema = z.object({
   startDate: z.coerce.date().optional(),
   notes: z.string().max(1000).optional(),
   clientId: z.string().optional(),
+  overtimeEligible: z.boolean().default(true),
 });
 
 export const updatePersonnelSchema = z.object({
@@ -43,6 +44,7 @@ export const updatePersonnelSchema = z.object({
   endDate: z.coerce.date().optional().nullable(),
   notes: z.string().max(1000).optional().nullable(),
   isActive: z.boolean(),
+  overtimeEligible: z.boolean(),
 });
 
 export const deactivatePersonnelSchema = z.object({

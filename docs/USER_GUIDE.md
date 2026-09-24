@@ -12,9 +12,7 @@ Aplikasi dijalankan lokal: [http://localhost:3000](http://localhost:3000)
 
 1. Buka `/login`.
 2. Masukkan email & password, atau pakai tombol **quick login** demo.
-3. Setelah login, Anda diarahkan ke home sesuai role:
-   - **DEVELOPER** → Timesheets
-   - Role lain → Capacity
+3. Setelah login, Anda diarahkan ke **Dashboard** (`/dashboard`) — ringkasan KPI sesuai role & tenant.
 
 ### 1.2 Akun demo (seed)
 
@@ -54,11 +52,12 @@ Aplikasi dijalankan lokal: [http://localhost:3000](http://localhost:3000)
 | **Body shopping** | Akun `CLIENT_PM` mendapat menu & CRUD gabungan Lead + AM (personnel, timesheet team, coverage, user access, dll.) |
 
 Demo seed: **ACME = Body shopping** → login `pm@acme.example` sudah dual-hat.
+Akun yang sama juga member **NOVA** (multi-company) — ganti company di switcher topbar.
 
 **Scope data**
 
 - Admin melihat lintas client.
-- CLIENT_PM / VENDOR_LEAD / VENDOR_AM terbatas pada **client** yang terhubung ke akun.
+- CLIENT_PM / VENDOR_LEAD / VENDOR_AM terbatas pada **company aktif** (`session.clientId`), dipilih dari daftar membership.
 - DEVELOPER terbatas pada **diri sendiri** (`developerId`).
 
 Detail matrix menu ada di [README.md](./README.md#rbac).
@@ -66,6 +65,18 @@ Detail matrix menu ada di [README.md](./README.md#rbac).
 ---
 
 ## 3. Panduan per modul
+
+### 3.0 Dashboard (`/dashboard`)
+
+**Siapa:** Semua role
+
+Halaman home setelah login. Menampilkan:
+
+- **KPI** sesuai role (developer: jam minggu ini, cuti/OT pending; lead/PM/admin: roster, project, jam team, replacement SLA, coverage).
+- **Needs attention** — antrean yang perlu ditindak (klik untuk buka modul terkait).
+- **Quick links** — pintasan workflow umum.
+
+Data otomatis ter-scope ke `clientId` / `developerId` akun Anda.
 
 ### 3.1 Capacity (`/capacity`)
 
@@ -112,6 +123,13 @@ Ada dua bagian: **roster developer** dan **leave (cuti/sakit/unpaid)**.
 | Lihat roster | Client PM (+ role di atas) |
 | Lihat & kelola profil sendiri | Developer |
 | Link / unlink akun Jira | Developer (sendiri); Lead/AM/Admin/PM sesuai permission. Link **memverifikasi email ke Jira API** dan menyimpan `accountId`. Wajib: Integrations → Jira enabled + Test sukses. |
+
+**Allow overtime** (roster): toggle di form personil.
+
+- **On** (default) — boleh ajukan OT dan tandai jam OT di timesheet.
+- **Off** — kontrak lump-sum / OT sudah termasuk gaji → **blokir** request OT + flag OT timesheet (jam panjang tetap boleh dalam hard cap, tanpa label OT).
+
+Demo seed: `dev2@acme.example` = OT blocked (lump-sum).
 
 #### Leave
 
@@ -229,16 +247,28 @@ Protokol **1-in / 1-out**: story points dan hours masuk ≈ keluar (toleransi ke
 2. Isi SP & hours out/in yang setara.
 3. Simpan; status tercatat di list.
 
-### 3.12 Reports (`/reports`)
+### 3.12 Tickets (`/tickets`)
+
+**Siapa:** Admin, Client PM, Vendor Lead, Vendor AM, Developer
+
+Pencatatan tiket operasional **harian** atau **bulk Excel** untuk report bulanan — mencakup kerja **dev dan non-dev** (Manage Apps, Manage Device, Support, Access, dll.).
+
+1. **Add ticket** — pilih project, kategori, status sederhana (`OPEN` / `IN_PROGRESS` / `DONE` / `CANCELLED`).
+2. Dev: pilih **assignee** developer. Non-dev: isi **reporter name** (tanpa profil developer).
+3. **Bulk Excel** — unduh template, isi baris, upload (maks. 300 baris).
+4. **Sync Jira** opsional (Integrations Jira harus enabled + test OK) — saat create atau tombol sync per tiket.
+5. Kartu ringkasan bulanan di atas list; export lengkap juga di **Reports → Operational tickets**.
+
+### 3.13 Reports (`/reports`)
 
 **Siapa:** semua role dengan menu
 
-- Pilih jenis laporan + rentang tanggal.
+- Pilih jenis laporan + rentang tanggal (termasuk **Operational tickets**).
 - **Export Excel (.xlsx)**.
 - Developer: data dibatasi ke diri sendiri.
 - Role lain: data client (Admin: lintas client sesuai filter).
 
-### 3.13 User access (`/access`)
+### 3.14 User access (`/access`)
 
 **Siapa:** SYS_ADMIN, VENDOR_LEAD
 
@@ -246,7 +276,7 @@ Protokol **1-in / 1-out**: story points dan hours masuk ≈ keluar (toleransi ke
 - User nonaktif **tidak bisa login**.
 - Gunakan untuk offboarding atau koreksi role.
 
-### 3.14 Integrations (`/integrations`)
+### 3.15 Integrations (`/integrations`)
 
 **Siapa:** SYS_ADMIN (edit), VENDOR_LEAD (lihat)
 
@@ -310,6 +340,7 @@ Admin dapat menguji koneksi dan menyimpan config; secret disembunyikan untuk non
 | Menu tidak muncul | Role tidak punya akses | Wajar — cek matrix RBAC / minta Lead ubah role di Access |
 | Redirect ke home | URL menu terlarang | Login dengan role yang benar |
 | Tidak bisa submit OT | Akun tanpa profil developer | Link/buat Developer record di Personnel |
+| Tidak bisa submit OT | Personil **Allow overtime = Off** (lump-sum) | Lead/AM ubah toggle di Personnel |
 | Timesheet ditolak | Melewati 16h/hari atau 50h/minggu | Kurangi jam / pecah ke hari lain |
 | Form evaluasi kosong (Lead/AM) | View-only | Hanya Client PM / Admin yang submit |
 | Form scope swap kosong (AM) | View-only | Minta PM atau Lead membuat swap |

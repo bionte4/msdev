@@ -301,3 +301,65 @@ export async function verifyJiraUserByEmail(
     };
   }
 }
+
+export async function createJiraIssue(input: {
+  summary: string;
+  description?: string | null;
+  labels?: string[];
+}): Promise<
+  | { ok: true; key: string; id: string; config: JiraConfig }
+  | { ok: false; error: string }
+> {
+  const loaded = await loadJiraConfig();
+  if (!loaded.ok) return loaded;
+
+  const { config } = loaded;
+  const text = (input.description ?? "").trim() || input.summary;
+
+  try {
+    const res = await jiraFetch(config, "/rest/api/3/issue", {
+      method: "POST",
+      body: JSON.stringify({
+        fields: {
+          project: { key: config.projectKey },
+          summary: input.summary.slice(0, 255),
+          issuetype: { name: config.issueType || "Task" },
+          labels: input.labels?.slice(0, 10) ?? [],
+          description: {
+            type: "doc",
+            version: 1,
+            content: [
+              {
+                type: "paragraph",
+                content: [{ type: "text", text: text.slice(0, 8000) }],
+              },
+            ],
+          },
+        },
+      }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      return {
+        ok: false,
+        error: `Jira create issue failed (${res.status}): ${body.slice(0, 220) || res.statusText}`,
+      };
+    }
+
+    const data = (await res.json()) as { id?: string; key?: string };
+    if (!data.id || !data.key) {
+      return { ok: false, error: "Jira did not return issue id/key" };
+    }
+
+    return { ok: true, id: data.id, key: data.key, config };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? `Jira create error: ${error.message}`
+          : "Jira create error",
+    };
+  }
+}

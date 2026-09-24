@@ -133,6 +133,37 @@ function permissionsFor(role: Role): TimesheetPermissions {
   }
 }
 
+const OT_INELIGIBLE_MESSAGE =
+  "This personnel is not eligible for overtime (lump-sum / OT included in salary).";
+
+/**
+ * Explicit OT flag is blocked when ineligible.
+ * Auto-flagging hours > 8 only applies when eligible; ineligible staff may still
+ * log long days within hard caps without OT billing.
+ */
+async function resolveOvertimeFlag(params: {
+  developerId: string;
+  wantOvertime: boolean;
+  hours: number;
+}): Promise<{ ok: true; isOvertime: boolean } | { ok: false; error: string }> {
+  const developer = await prisma.developer.findUnique({
+    where: { id: params.developerId },
+    select: { overtimeEligible: true },
+  });
+  if (!developer) return { ok: false, error: "Developer not found" };
+
+  if (!developer.overtimeEligible && params.wantOvertime) {
+    return { ok: false, error: OT_INELIGIBLE_MESSAGE };
+  }
+
+  return {
+    ok: true,
+    isOvertime: developer.overtimeEligible
+      ? params.wantOvertime || params.hours > 8
+      : false,
+  };
+}
+
 function mapEntry(
   entry: {
     id: string;
@@ -422,6 +453,13 @@ export async function createTimesheet(
     });
     if (!caps.ok) return fail(caps.error);
 
+    const ot = await resolveOvertimeFlag({
+      developerId: target.developerId,
+      wantOvertime: data.isOvertime,
+      hours: data.hours,
+    });
+    if (!ot.ok) return fail(ot.error);
+
     const project = await prisma.project.findFirst({
       where: {
         id: data.projectId,
@@ -443,7 +481,7 @@ export async function createTimesheet(
         workDate,
         hours: data.hours,
         taskSummary: data.taskSummary,
-        isOvertime: data.isOvertime || data.hours > 8,
+        isOvertime: ot.isOvertime,
       },
       include: {
         project: true,
@@ -522,6 +560,13 @@ export async function updateTimesheet(
       return fail("Project not found or inactive");
     }
 
+    const ot = await resolveOvertimeFlag({
+      developerId: targetDeveloperId,
+      wantOvertime: parsed.data.isOvertime,
+      hours: parsed.data.hours,
+    });
+    if (!ot.ok) return fail(ot.error);
+
     const updated = await prisma.timesheet.update({
       where: { id: existing.id },
       data: {
@@ -530,7 +575,7 @@ export async function updateTimesheet(
         workDate,
         hours: parsed.data.hours,
         taskSummary: parsed.data.taskSummary,
-        isOvertime: parsed.data.isOvertime || parsed.data.hours > 8,
+        isOvertime: ot.isOvertime,
       },
       include: {
         project: true,
@@ -612,7 +657,9 @@ export async function getActiveProjectsForTimesheet(): Promise<
 }
 
 export async function getDevelopersForTimesheet(): Promise<
-  ActionResult<{ id: string; name: string; email?: string }[]>
+  ActionResult<
+    { id: string; name: string; email?: string; overtimeEligible: boolean }[]
+  >
 > {
   try {
     const session = await auth();
@@ -634,6 +681,7 @@ export async function getDevelopersForTimesheet(): Promise<
         id: d.id,
         name: d.user.name,
         email: d.user.email,
+        overtimeEligible: d.overtimeEligible,
       }))
     );
   } catch (error) {
@@ -701,8 +749,9 @@ export async function downloadTimesheetImportTemplate(): Promise<
       ["projectCode", "Yes", "Active project code (e.g. PORTAL)"],
       ["hours", "Yes", `0.5 – ${MAX_DAILY_HOURS}`],
       ["taskSummary", "Yes", "Min 5 characters"],
-      ["isOvertime", "No", "Yes/No (or true/false/1/0)"],
+      ["isOvertime", "No", "Yes/No — rejected if personnel overtimeEligible=false"],
       ["", "", "Daily max 16h and weekly hard cap 50h are enforced per row"],
+      ["", "", "Lump-sum staff: leave isOvertime=No (hours > 8 will not auto-flag OT)"],
     ]);
     XLSX.utils.book_append_sheet(workbook, instructions, "Instructions");
 
@@ -881,6 +930,16 @@ export async function bulkImportTimesheets(
           continue;
         }
 
+        const ot = await resolveOvertimeFlag({
+          developerId: developer.id,
+          wantOvertime: Boolean(row.isOvertime),
+          hours: row.hours,
+        });
+        if (!ot.ok) {
+          errors.push({ row: excelRow, message: ot.error });
+          continue;
+        }
+
         await prisma.timesheet.create({
           data: {
             developerId: developer.id,
@@ -888,7 +947,7 @@ export async function bulkImportTimesheets(
             workDate,
             hours: row.hours,
             taskSummary: row.taskSummary,
-            isOvertime: row.isOvertime || row.hours > 8,
+            isOvertime: ot.isOvertime,
           },
         });
         created += 1;

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import {
   LayoutDashboard,
+  Gauge,
   Clock,
   ClipboardCheck,
   ArrowLeftRight,
@@ -18,6 +19,7 @@ import {
   UserRoundCog,
   Trophy,
   Shield,
+  Ticket,
   Menu,
   X,
   LogOut,
@@ -33,9 +35,15 @@ import { NotificationBell } from "@/components/layout/notification-bell";
 
 const NAV_ITEMS = [
   {
+    href: "/dashboard",
+    label: "Dashboard",
+    icon: LayoutDashboard,
+    roles: ROUTE_ROLES["/dashboard"],
+  },
+  {
     href: "/capacity",
     label: "Capacity",
-    icon: LayoutDashboard,
+    icon: Gauge,
     roles: ROUTE_ROLES["/capacity"],
   },
   {
@@ -97,6 +105,12 @@ const NAV_ITEMS = [
     label: "Scope swaps",
     icon: ArrowLeftRight,
     roles: ROUTE_ROLES["/scope-swaps"],
+  },
+  {
+    href: "/tickets",
+    label: "Tickets",
+    icon: Ticket,
+    roles: ROUTE_ROLES["/tickets"],
   },
   {
     href: "/reports",
