@@ -8,10 +8,23 @@ async function main() {
 
   const client = await prisma.client.upsert({
     where: { code: "ACME" },
-    update: {},
+    update: { isActive: true, name: "Acme Corp" },
     create: {
       name: "Acme Corp",
       code: "ACME",
+      isActive: true,
+      notes: "Primary governance demo client",
+    },
+  });
+
+  await prisma.client.upsert({
+    where: { code: "NOVA" },
+    update: { isActive: true, name: "Nova Labs" },
+    create: {
+      name: "Nova Labs",
+      code: "NOVA",
+      isActive: true,
+      notes: "Secondary client for multi-tenant demos",
     },
   });
 
@@ -65,6 +78,8 @@ async function main() {
           standardCapacity: 40,
           jobTitle: "Software Developer",
           isActive: true,
+          jiraAccountEmail: u.email,
+          jiraLinkedAt: new Date(),
         },
         create: {
           userId: user.id,
@@ -75,6 +90,8 @@ async function main() {
           startDate: new Date(),
           skillTags: ["TypeScript", "React"],
           isActive: true,
+          jiraAccountEmail: u.email,
+          jiraLinkedAt: new Date(),
         },
       });
     }
@@ -140,17 +157,37 @@ async function main() {
       where: { developerId: alex.id },
     });
 
-    await prisma.leaveRequest.create({
+    const leave = await prisma.leaveRequest.create({
       data: {
         developerId: alex.id,
-        leaveType: "ANNUAL_LEAVE",
-        status: "PENDING",
+        leaveType: "SICK",
+        status: "APPROVED",
         startDate: nextWeek,
         endDate: nextWeek,
         totalDays: 1,
-        reason: "Family event — requesting one day annual leave",
+        reason: "Medical appointment — approved sick leave",
       },
     });
+
+    if (jordan) {
+      await prisma.coverageAssignment.deleteMany({
+        where: { absentDeveloperId: alex.id },
+      });
+      await prisma.coverageAssignment.create({
+        data: {
+          clientId: client.id,
+          projectId: project.id,
+          leaveRequestId: leave.id,
+          absentDeveloperId: alex.id,
+          coverDeveloperId: jordan.id,
+          status: "PLANNED",
+          startDate: nextWeek,
+          endDate: nextWeek,
+          reason: "Jordan covers Alex during approved sick leave",
+          notes: "Handover standup tickets in progress",
+        },
+      });
+    }
 
     const skillCatalog = [
       { name: "TypeScript", category: "Language" },

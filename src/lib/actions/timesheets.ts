@@ -11,10 +11,13 @@ import {
 } from "@/lib/constants";
 import {
   CAP_MESSAGES,
+  TIMESHEET_IMPORT_HEADERS,
+  bulkImportTimesheetsSchema,
   createTimesheetSchema,
   deleteTimesheetSchema,
   listTimesheetsSchema,
   updateTimesheetSchema,
+  type BulkImportTimesheetsInput,
   type CreateTimesheetInput,
   type DeleteTimesheetInput,
   type ListTimesheetsInput,
@@ -22,6 +25,7 @@ import {
 } from "@/lib/validations/timesheet";
 import { getWeekBounds, toNumber } from "@/lib/utils";
 import { fail, ok, type ActionResult } from "@/types/actions";
+import * as XLSX from "xlsx";
 
 export interface TimesheetEntry {
   id: string;
@@ -40,6 +44,8 @@ export interface TimesheetEntry {
 export interface TimesheetListResult {
   weekStart: string;
   weekEnd: string;
+  periodFrom: string;
+  periodTo: string;
   totalHours: number;
   overtimeHours: number;
   remainingToHardCap: number;
@@ -47,6 +53,7 @@ export interface TimesheetListResult {
   hardCap: number;
   isNearCap: boolean;
   isOverCap: boolean;
+  showWeeklyCap: boolean;
   permissions: TimesheetPermissions;
   entries: TimesheetEntry[];
 }
@@ -58,6 +65,13 @@ export interface TimesheetPermissions {
   canDeleteOwn: boolean;
   canDeleteTeam: boolean;
   canSelectDeveloper: boolean;
+  canImport: boolean;
+}
+
+export interface TimesheetImportResult {
+  created: number;
+  failed: number;
+  errors: { row: number; message: string }[];
 }
 
 type AuthedSession = NonNullable<Session>;
@@ -72,6 +86,7 @@ function permissionsFor(role: Role): TimesheetPermissions {
         canDeleteOwn: true,
         canDeleteTeam: false,
         canSelectDeveloper: false,
+        canImport: true,
       };
     case "VENDOR_LEAD":
       return {
@@ -81,6 +96,7 @@ function permissionsFor(role: Role): TimesheetPermissions {
         canDeleteOwn: true,
         canDeleteTeam: true,
         canSelectDeveloper: true,
+        canImport: true,
       };
     case "SYS_ADMIN":
       return {
@@ -90,6 +106,7 @@ function permissionsFor(role: Role): TimesheetPermissions {
         canDeleteOwn: true,
         canDeleteTeam: true,
         canSelectDeveloper: true,
+        canImport: true,
       };
     case "CLIENT_PM":
     case "VENDOR_AM":
@@ -100,6 +117,7 @@ function permissionsFor(role: Role): TimesheetPermissions {
         canDeleteOwn: false,
         canDeleteTeam: false,
         canSelectDeveloper: false,
+        canImport: false,
       };
     default:
       return {
@@ -109,6 +127,7 @@ function permissionsFor(role: Role): TimesheetPermissions {
         canDeleteOwn: false,
         canDeleteTeam: false,
         canSelectDeveloper: false,
+        canImport: false,
       };
   }
 }
@@ -284,9 +303,31 @@ export async function listTimesheets(
     }
 
     const perms = permissionsFor(session.user.role);
-    const { weekStart, weekEnd } = getWeekBounds(
-      parsed.data.weekStart ?? new Date()
-    );
+    const hasCustomPeriod = Boolean(parsed.data.from || parsed.data.to);
+    let periodFrom: Date;
+    let periodTo: Date;
+    let weekStart: Date;
+    let weekEnd: Date;
+
+    if (hasCustomPeriod) {
+      periodFrom = new Date(parsed.data.from ?? parsed.data.to ?? new Date());
+      periodTo = new Date(parsed.data.to ?? parsed.data.from ?? new Date());
+      periodFrom.setHours(0, 0, 0, 0);
+      periodTo.setHours(23, 59, 59, 999);
+      const bounds = getWeekBounds(periodFrom);
+      weekStart = bounds.weekStart;
+      weekEnd = bounds.weekEnd;
+    } else {
+      const bounds = getWeekBounds(parsed.data.weekStart ?? new Date());
+      weekStart = bounds.weekStart;
+      weekEnd = bounds.weekEnd;
+      periodFrom = weekStart;
+      periodTo = weekEnd;
+    }
+
+    const spanDays =
+      (periodTo.getTime() - periodFrom.getTime()) / (24 * 60 * 60 * 1000);
+    const showWeeklyCap = !hasCustomPeriod || spanDays <= 7;
 
     let developerFilter: string | undefined = parsed.data.developerId;
 
@@ -302,7 +343,7 @@ export async function listTimesheets(
 
     const entries = await prisma.timesheet.findMany({
       where: {
-        workDate: { gte: weekStart, lte: weekEnd },
+        workDate: { gte: periodFrom, lte: periodTo },
         ...(developerFilter ? { developerId: developerFilter } : {}),
         ...(session.user.role !== "SYS_ADMIN" && session.user.clientId
           ? { developer: { clientId: session.user.clientId } }
@@ -313,6 +354,7 @@ export async function listTimesheets(
         developer: { include: { user: { select: { name: true } } } },
       },
       orderBy: [{ workDate: "desc" }, { createdAt: "desc" }],
+      take: 500,
     });
 
     const mapped = entries.map((e) => mapEntry(e, session, perms));
@@ -324,13 +366,16 @@ export async function listTimesheets(
     return ok({
       weekStart: weekStart.toISOString(),
       weekEnd: weekEnd.toISOString(),
+      periodFrom: periodFrom.toISOString(),
+      periodTo: periodTo.toISOString(),
       totalHours,
       overtimeHours,
       remainingToHardCap: Math.max(0, MAX_WEEKLY_HOURS_HARD_CAP - totalHours),
       warningThreshold: WEEKLY_HOURS_WARNING,
       hardCap: MAX_WEEKLY_HOURS_HARD_CAP,
-      isNearCap: totalHours >= WEEKLY_HOURS_WARNING,
-      isOverCap: totalHours >= MAX_WEEKLY_HOURS_HARD_CAP,
+      isNearCap: showWeeklyCap && totalHours >= WEEKLY_HOURS_WARNING,
+      isOverCap: showWeeklyCap && totalHours >= MAX_WEEKLY_HOURS_HARD_CAP,
+      showWeeklyCap,
       permissions: perms,
       entries: mapped,
     });
@@ -566,7 +611,7 @@ export async function getActiveProjectsForTimesheet(): Promise<
 }
 
 export async function getDevelopersForTimesheet(): Promise<
-  ActionResult<{ id: string; name: string }[]>
+  ActionResult<{ id: string; name: string; email?: string }[]>
 > {
   try {
     const session = await auth();
@@ -579,7 +624,7 @@ export async function getDevelopersForTimesheet(): Promise<
           ? { clientId: session.user.clientId }
           : {}),
       },
-      include: { user: { select: { name: true } } },
+      include: { user: { select: { name: true, email: true } } },
       orderBy: { user: { name: "asc" } },
     });
 
@@ -587,11 +632,282 @@ export async function getDevelopersForTimesheet(): Promise<
       developers.map((d) => ({
         id: d.id,
         name: d.user.name,
+        email: d.user.email,
       }))
     );
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to load developers";
+    return fail(message);
+  }
+}
+
+export async function downloadTimesheetImportTemplate(): Promise<
+  ActionResult<{ filename: string; base64: string }>
+> {
+  try {
+    const session = await auth();
+    assertRole(session, ["DEVELOPER", "VENDOR_LEAD", "SYS_ADMIN"]);
+    const perms = permissionsFor(session.user.role);
+    if (!perms.canImport) return fail("Unauthorized to download import template");
+
+    const sampleEmail =
+      session.user.role === "DEVELOPER"
+        ? (session.user.email ?? "developer@acme.example")
+        : "developer@acme.example";
+
+    const projects = await prisma.project.findMany({
+      where: {
+        isActive: true,
+        ...(session.user.role !== "SYS_ADMIN" && session.user.clientId
+          ? { clientId: session.user.clientId }
+          : {}),
+      },
+      select: { code: true },
+      take: 1,
+      orderBy: { name: "asc" },
+    });
+
+    const today = new Date().toISOString().slice(0, 10);
+    const sampleCode = projects[0]?.code ?? "PORTAL";
+
+    const workbook = XLSX.utils.book_new();
+    const sheet = XLSX.utils.aoa_to_sheet([
+      [...TIMESHEET_IMPORT_HEADERS],
+      [
+        today,
+        sampleEmail,
+        sampleCode,
+        8,
+        "Implemented feature X",
+        "No",
+      ],
+      [
+        today,
+        sampleEmail,
+        sampleCode,
+        2,
+        "Code review and bugfix",
+        "Yes",
+      ],
+    ]);
+    XLSX.utils.book_append_sheet(workbook, sheet, "Timesheets");
+
+    const instructions = XLSX.utils.aoa_to_sheet([
+      ["Column", "Required", "Notes"],
+      ["workDate", "Yes", "YYYY-MM-DD"],
+      ["developerEmail", "Yes", "Must match an active developer login email"],
+      ["projectCode", "Yes", "Active project code (e.g. PORTAL)"],
+      ["hours", "Yes", `0.5 – ${MAX_DAILY_HOURS}`],
+      ["taskSummary", "Yes", "Min 5 characters"],
+      ["isOvertime", "No", "Yes/No (or true/false/1/0)"],
+      ["", "", "Daily max 16h and weekly hard cap 50h are enforced per row"],
+    ]);
+    XLSX.utils.book_append_sheet(workbook, instructions, "Instructions");
+
+    const buffer = XLSX.write(workbook, {
+      bookType: "xlsx",
+      type: "buffer",
+    }) as Buffer;
+
+    return ok({
+      filename: "timesheet-import-template.xlsx",
+      base64: Buffer.from(buffer).toString("base64"),
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to build import template";
+    return fail(message);
+  }
+}
+
+export async function bulkImportTimesheetsFromExcel(input: {
+  base64: string;
+}): Promise<ActionResult<TimesheetImportResult>> {
+  try {
+    const session = await auth();
+    assertRole(session, ["DEVELOPER", "VENDOR_LEAD", "SYS_ADMIN"]);
+    const perms = permissionsFor(session.user.role);
+    if (!perms.canImport) return fail("Unauthorized to import timesheets");
+
+    if (!input.base64 || input.base64.length < 16) {
+      return fail("Import file is empty");
+    }
+
+    const binary = Buffer.from(input.base64, "base64");
+    const workbook = XLSX.read(binary, { type: "buffer", cellDates: true });
+    const sheetName = workbook.SheetNames[0];
+    if (!sheetName) return fail("Excel file has no sheets");
+
+    const sheet = workbook.Sheets[sheetName];
+    const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+      defval: "",
+      raw: false,
+    });
+
+    if (rawRows.length === 0) {
+      return fail("No data rows found in the Excel file");
+    }
+
+    const normalized = rawRows.map((row) => {
+      const get = (...keys: string[]) => {
+        for (const key of keys) {
+          if (row[key] !== undefined && row[key] !== "") return row[key];
+          const found = Object.keys(row).find(
+            (k) => k.trim().toLowerCase() === key.toLowerCase()
+          );
+          if (found && row[found] !== undefined && row[found] !== "") {
+            return row[found];
+          }
+        }
+        return "";
+      };
+      return {
+        workDate: get("workDate", "work_date", "date"),
+        developerEmail: String(
+          get("developerEmail", "developer_email", "email")
+        )
+          .trim()
+          .toLowerCase(),
+        projectCode: String(get("projectCode", "project_code", "project")),
+        hours: get("hours"),
+        taskSummary: String(get("taskSummary", "task_summary", "task")),
+        isOvertime: get("isOvertime", "is_overtime", "overtime"),
+      };
+    });
+
+    const parsed = bulkImportTimesheetsSchema.safeParse({ rows: normalized });
+    if (!parsed.success) {
+      return fail(
+        parsed.error.issues[0]?.message ?? "Invalid import file format"
+      );
+    }
+
+    return bulkImportTimesheets({ rows: parsed.data.rows });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to import timesheets";
+    return fail(message);
+  }
+}
+
+export async function bulkImportTimesheets(
+  input: BulkImportTimesheetsInput
+): Promise<ActionResult<TimesheetImportResult>> {
+  try {
+    const session = await auth();
+    assertRole(session, ["DEVELOPER", "VENDOR_LEAD", "SYS_ADMIN"]);
+    const perms = permissionsFor(session.user.role);
+    if (!perms.canImport) return fail("Unauthorized to import timesheets");
+
+    const parsed = bulkImportTimesheetsSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail(parsed.error.issues[0]?.message ?? "Invalid import payload");
+    }
+
+    const errors: { row: number; message: string }[] = [];
+    let created = 0;
+
+    for (let i = 0; i < parsed.data.rows.length; i += 1) {
+      const row = parsed.data.rows[i];
+      const excelRow = i + 2;
+
+      try {
+        if (
+          session.user.role === "DEVELOPER" &&
+          session.user.email &&
+          row.developerEmail.toLowerCase() !== session.user.email.toLowerCase()
+        ) {
+          errors.push({
+            row: excelRow,
+            message: "Developers may only import their own email",
+          });
+          continue;
+        }
+
+        const developer = await prisma.developer.findFirst({
+          where: {
+            isActive: true,
+            user: { email: row.developerEmail },
+            ...(session.user.role !== "SYS_ADMIN" && session.user.clientId
+              ? { clientId: session.user.clientId }
+              : {}),
+          },
+        });
+        if (!developer) {
+          errors.push({
+            row: excelRow,
+            message: `Developer not found for email ${row.developerEmail}`,
+          });
+          continue;
+        }
+
+        const access = await assertCanAccessDeveloper(session, developer.id);
+        if (!access.ok) {
+          errors.push({ row: excelRow, message: access.error });
+          continue;
+        }
+
+        const project = await prisma.project.findFirst({
+          where: {
+            code: row.projectCode,
+            isActive: true,
+            ...(session.user.role !== "SYS_ADMIN" && session.user.clientId
+              ? { clientId: session.user.clientId }
+              : { clientId: developer.clientId }),
+          },
+        });
+        if (!project) {
+          errors.push({
+            row: excelRow,
+            message: `Project code “${row.projectCode}” not found or inactive`,
+          });
+          continue;
+        }
+
+        const workDate = new Date(row.workDate);
+        workDate.setHours(0, 0, 0, 0);
+
+        const caps = await validateCaps({
+          developerId: developer.id,
+          workDate,
+          hours: row.hours,
+        });
+        if (!caps.ok) {
+          errors.push({ row: excelRow, message: caps.error });
+          continue;
+        }
+
+        await prisma.timesheet.create({
+          data: {
+            developerId: developer.id,
+            projectId: project.id,
+            workDate,
+            hours: row.hours,
+            taskSummary: row.taskSummary,
+            isOvertime: row.isOvertime || row.hours > 8,
+          },
+        });
+        created += 1;
+      } catch (rowError) {
+        errors.push({
+          row: excelRow,
+          message:
+            rowError instanceof Error ? rowError.message : "Failed to import row",
+        });
+      }
+    }
+
+    return ok({
+      created,
+      failed: errors.length,
+      errors: errors.slice(0, 50),
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to import timesheets";
     return fail(message);
   }
 }

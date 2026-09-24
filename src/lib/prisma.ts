@@ -5,7 +5,7 @@ const globalForPrisma = globalThis as unknown as {
   prismaVersion?: string;
 };
 
-const PRISMA_CLIENT_VERSION = "development-v5-training-schedule";
+const PRISMA_CLIENT_VERSION = "development-v8-coverage-clients-fix";
 
 function createPrismaClient(): PrismaClient {
   return new PrismaClient({
@@ -20,6 +20,8 @@ function getPrismaClient(): PrismaClient {
     existing &&
     typeof (existing as { skill?: unknown }).skill !== "undefined" &&
     typeof (existing as { skillCategory?: unknown }).skillCategory !==
+      "undefined" &&
+    typeof (existing as { coverageAssignment?: unknown }).coverageAssignment !==
       "undefined" &&
     typeof (existing as { training?: unknown }).training !== "undefined" &&
     typeof (existing as { coaching?: unknown }).coaching !== "undefined" &&

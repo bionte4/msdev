@@ -13,6 +13,9 @@ import {
   Users,
   GraduationCap,
   FolderKanban,
+  FileSpreadsheet,
+  Building2,
+  UserRoundCog,
   Menu,
   X,
   LogOut,
@@ -25,13 +28,16 @@ import { Button } from "@/components/ui/button";
 
 const NAV_ITEMS = [
   { href: "/capacity", label: "Capacity", icon: LayoutDashboard },
+  { href: "/clients", label: "Clients", icon: Building2 },
   { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/personnel", label: "Personnel", icon: Users },
+  { href: "/coverage", label: "Coverage", icon: UserRoundCog },
   { href: "/development", label: "Development", icon: GraduationCap },
   { href: "/timesheets", label: "Timesheets", icon: Clock },
   { href: "/overtime", label: "Overtime", icon: Timer },
   { href: "/evaluations", label: "Evaluations", icon: ClipboardCheck },
   { href: "/scope-swaps", label: "Scope swaps", icon: ArrowLeftRight },
+  { href: "/reports", label: "Reports", icon: FileSpreadsheet },
   { href: "/integrations", label: "Integrations", icon: Plug },
 ] as const;
 

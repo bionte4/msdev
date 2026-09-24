@@ -7,10 +7,14 @@ import type { Role } from "@/lib/constants";
 import {
   createPersonnelSchema,
   deactivatePersonnelSchema,
+  linkJiraAccountSchema,
   parseSkillTags,
+  unlinkJiraAccountSchema,
   updatePersonnelSchema,
   type CreatePersonnelInput,
   type DeactivatePersonnelInput,
+  type LinkJiraAccountInput,
+  type UnlinkJiraAccountInput,
   type UpdatePersonnelInput,
 } from "@/lib/validations/personnel";
 import { toNumber } from "@/lib/utils";
@@ -25,26 +29,35 @@ export interface PersonnelItem {
   hourlyRate: number;
   standardCapacity: number;
   skillTags: string[];
+  jiraAccountEmail: string | null;
+  jiraAccountId: string | null;
+  jiraLinkedAt: string | null;
   startDate: string | null;
   endDate: string | null;
   notes: string | null;
   isActive: boolean;
   canEdit: boolean;
   canDeactivate: boolean;
+  canLinkJira: boolean;
 }
 
 export interface PersonnelPermissions {
   canCreate: boolean;
   canEdit: boolean;
   canDeactivate: boolean;
+  canLinkJira: boolean;
+  canLinkOwnJira: boolean;
 }
 
 function personnelPerms(role: Role): PersonnelPermissions {
-  const manage = role === "SYS_ADMIN" || role === "VENDOR_LEAD" || role === "VENDOR_AM";
+  const manage =
+    role === "SYS_ADMIN" || role === "VENDOR_LEAD" || role === "VENDOR_AM";
   return {
     canCreate: manage,
     canEdit: manage,
     canDeactivate: manage,
+    canLinkJira: manage || role === "CLIENT_PM",
+    canLinkOwnJira: role === "DEVELOPER",
   };
 }
 
@@ -56,14 +69,21 @@ function mapPersonnel(
     standardCapacity: unknown;
     jobTitle: string;
     skillTags: string[];
+    jiraAccountEmail: string | null;
+    jiraAccountId: string | null;
+    jiraLinkedAt: Date | null;
     startDate: Date | null;
     endDate: Date | null;
     notes: string | null;
     isActive: boolean;
     user: { name: string; email: string };
   },
-  perms: PersonnelPermissions
+  perms: PersonnelPermissions,
+  currentDeveloperId: string | null
 ): PersonnelItem {
+  const isSelf = Boolean(
+    currentDeveloperId && row.id === currentDeveloperId
+  );
   return {
     id: row.id,
     userId: row.userId,
@@ -73,13 +93,70 @@ function mapPersonnel(
     hourlyRate: toNumber(row.hourlyRate),
     standardCapacity: toNumber(row.standardCapacity),
     skillTags: row.skillTags,
+    jiraAccountEmail: row.jiraAccountEmail,
+    jiraAccountId: row.jiraAccountId,
+    jiraLinkedAt: row.jiraLinkedAt?.toISOString() ?? null,
     startDate: row.startDate?.toISOString().slice(0, 10) ?? null,
     endDate: row.endDate?.toISOString().slice(0, 10) ?? null,
     notes: row.notes,
     isActive: row.isActive,
     canEdit: perms.canEdit,
     canDeactivate: perms.canDeactivate && row.isActive,
+    canLinkJira: perms.canLinkJira || (perms.canLinkOwnJira && isSelf),
   };
+}
+
+async function assertJiraEmailAvailable(
+  email: string,
+  excludeDeveloperId?: string
+): Promise<string | null> {
+  const existing = await prisma.developer.findFirst({
+    where: {
+      jiraAccountEmail: email,
+      ...(excludeDeveloperId ? { NOT: { id: excludeDeveloperId } } : {}),
+    },
+    include: { user: { select: { name: true } } },
+  });
+  if (!existing) return null;
+  return `Jira account “${email}” is already linked to ${existing.user.name}`;
+}
+
+async function assertPersonnelScope(
+  session: NonNullable<Awaited<ReturnType<typeof auth>>>,
+  developerId: string
+): Promise<
+  | {
+      ok: true;
+      developer: {
+        id: string;
+        clientId: string;
+        userId: string;
+      };
+    }
+  | { ok: false; error: string }
+> {
+  const developer = await prisma.developer.findUnique({
+    where: { id: developerId },
+    select: { id: true, clientId: true, userId: true },
+  });
+  if (!developer) return { ok: false, error: "Personnel not found" };
+
+  if (session.user.role === "DEVELOPER") {
+    if (session.user.developerId !== developer.id) {
+      return { ok: false, error: "Unauthorized: can only manage your own Jira link" };
+    }
+    return { ok: true, developer };
+  }
+
+  if (
+    session.user.role !== "SYS_ADMIN" &&
+    session.user.clientId &&
+    developer.clientId !== session.user.clientId
+  ) {
+    return { ok: false, error: "Unauthorized: personnel belongs to another client" };
+  }
+
+  return { ok: true, developer };
 }
 
 export async function listPersonnel(): Promise<
@@ -110,7 +187,9 @@ export async function listPersonnel(): Promise<
     });
 
     return ok({
-      items: rows.map((r) => mapPersonnel(r, perms)),
+      items: rows.map((r) =>
+        mapPersonnel(r, perms, session.user.developerId ?? null)
+      ),
       permissions: perms,
     });
   } catch (error) {
@@ -151,6 +230,12 @@ export async function createPersonnel(
       return fail("Email is already registered");
     }
 
+    const jiraEmail = parsed.data.jiraAccountEmail ?? null;
+    if (jiraEmail) {
+      const taken = await assertJiraEmailAvailable(jiraEmail);
+      if (taken) return fail(taken);
+    }
+
     const passwordHash = await hash(
       parsed.data.password ?? "password123",
       10
@@ -175,6 +260,8 @@ export async function createPersonnel(
           standardCapacity: parsed.data.standardCapacity,
           jobTitle: parsed.data.jobTitle,
           skillTags: parseSkillTags(parsed.data.skillTags),
+          jiraAccountEmail: jiraEmail,
+          jiraLinkedAt: jiraEmail ? new Date() : null,
           startDate: parsed.data.startDate ?? new Date(),
           notes: parsed.data.notes,
           isActive: true,
@@ -183,7 +270,9 @@ export async function createPersonnel(
       });
     });
 
-    return ok(mapPersonnel(created, perms));
+    return ok(
+      mapPersonnel(created, perms, session.user.developerId ?? null)
+    );
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to create personnel";
@@ -219,6 +308,14 @@ export async function updatePersonnel(
       return fail("Unauthorized: personnel belongs to another client");
     }
 
+    const jiraEmail = parsed.data.jiraAccountEmail ?? null;
+    if (jiraEmail) {
+      const taken = await assertJiraEmailAvailable(jiraEmail, existing.id);
+      if (taken) return fail(taken);
+    }
+
+    const jiraChanged = (existing.jiraAccountEmail ?? null) !== jiraEmail;
+
     const updated = await prisma.$transaction(async (tx) => {
       await tx.user.update({
         where: { id: existing.userId },
@@ -232,6 +329,13 @@ export async function updatePersonnel(
           hourlyRate: parsed.data.hourlyRate,
           standardCapacity: parsed.data.standardCapacity,
           skillTags: parseSkillTags(parsed.data.skillTags),
+          jiraAccountEmail: jiraEmail,
+          jiraAccountId: jiraChanged ? null : undefined,
+          jiraLinkedAt: jiraChanged
+            ? jiraEmail
+              ? new Date()
+              : null
+            : undefined,
           startDate: parsed.data.startDate ?? null,
           endDate: parsed.data.endDate ?? null,
           notes: parsed.data.notes ?? null,
@@ -241,7 +345,9 @@ export async function updatePersonnel(
       });
     });
 
-    return ok(mapPersonnel(updated, perms));
+    return ok(
+      mapPersonnel(updated, perms, session.user.developerId ?? null)
+    );
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to update personnel";
@@ -289,12 +395,112 @@ export async function deactivatePersonnel(
       include: { user: { select: { name: true, email: true } } },
     });
 
-    return ok(mapPersonnel(updated, perms));
+    return ok(
+      mapPersonnel(updated, perms, session.user.developerId ?? null)
+    );
   } catch (error) {
     const message =
       error instanceof Error
         ? error.message
         : "Failed to deactivate personnel";
+    return fail(message);
+  }
+}
+
+export async function linkJiraAccount(
+  input: LinkJiraAccountInput
+): Promise<ActionResult<PersonnelItem>> {
+  try {
+    const session = await auth();
+    assertRole(session, [
+      "SYS_ADMIN",
+      "VENDOR_LEAD",
+      "VENDOR_AM",
+      "CLIENT_PM",
+      "DEVELOPER",
+    ]);
+
+    const perms = personnelPerms(session.user.role);
+    const parsed = linkJiraAccountSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail(parsed.error.issues[0]?.message ?? "Invalid Jira link");
+    }
+
+    const scope = await assertPersonnelScope(session, parsed.data.developerId);
+    if (!scope.ok) return fail(scope.error);
+
+    const isSelf = session.user.developerId === scope.developer.id;
+    if (!perms.canLinkJira && !(perms.canLinkOwnJira && isSelf)) {
+      return fail("Unauthorized to link Jira account");
+    }
+
+    const taken = await assertJiraEmailAvailable(
+      parsed.data.jiraAccountEmail,
+      scope.developer.id
+    );
+    if (taken) return fail(taken);
+
+    const updated = await prisma.developer.update({
+      where: { id: scope.developer.id },
+      data: {
+        jiraAccountEmail: parsed.data.jiraAccountEmail,
+        jiraAccountId: parsed.data.jiraAccountId || null,
+        jiraLinkedAt: new Date(),
+      },
+      include: { user: { select: { name: true, email: true } } },
+    });
+
+    return ok(
+      mapPersonnel(updated, perms, session.user.developerId ?? null)
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to link Jira account";
+    return fail(message);
+  }
+}
+
+export async function unlinkJiraAccount(
+  input: UnlinkJiraAccountInput
+): Promise<ActionResult<PersonnelItem>> {
+  try {
+    const session = await auth();
+    assertRole(session, [
+      "SYS_ADMIN",
+      "VENDOR_LEAD",
+      "VENDOR_AM",
+      "CLIENT_PM",
+      "DEVELOPER",
+    ]);
+
+    const perms = personnelPerms(session.user.role);
+    const parsed = unlinkJiraAccountSchema.safeParse(input);
+    if (!parsed.success) return fail("Invalid unlink request");
+
+    const scope = await assertPersonnelScope(session, parsed.data.developerId);
+    if (!scope.ok) return fail(scope.error);
+
+    const isSelf = session.user.developerId === scope.developer.id;
+    if (!perms.canLinkJira && !(perms.canLinkOwnJira && isSelf)) {
+      return fail("Unauthorized to unlink Jira account");
+    }
+
+    const updated = await prisma.developer.update({
+      where: { id: scope.developer.id },
+      data: {
+        jiraAccountEmail: null,
+        jiraAccountId: null,
+        jiraLinkedAt: null,
+      },
+      include: { user: { select: { name: true, email: true } } },
+    });
+
+    return ok(
+      mapPersonnel(updated, perms, session.user.developerId ?? null)
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to unlink Jira account";
     return fail(message);
   }
 }

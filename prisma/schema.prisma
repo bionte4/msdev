@@ -36,6 +36,13 @@ enum LeaveStatus {
   CANCELLED
 }
 
+enum CoverageStatus {
+  PLANNED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
 enum ReplacementStatus {
   OPEN
   IN_PROGRESS
@@ -92,6 +99,8 @@ model Client {
   id          String       @id @default(cuid())
   name        String
   code        String       @unique
+  isActive    Boolean      @default(true)
+  notes       String?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   users       User[]
@@ -100,6 +109,7 @@ model Client {
   evaluations MonthlyEvaluation[]
   scopeSwaps  ScopeSwap[]
   replacements ReplacementTicket[]
+  coverages   CoverageAssignment[]
 }
 
 model User {
@@ -162,6 +172,9 @@ model Developer {
   hourlyRate       Decimal             @db.Decimal(10, 2)
   standardCapacity Decimal             @default(40) @db.Decimal(5, 2)
   jobTitle         String              @default("Developer")
+  jiraAccountEmail String?             @unique
+  jiraAccountId    String?
+  jiraLinkedAt     DateTime?
   startDate        DateTime?           @db.Date
   endDate          DateTime?           @db.Date
   notes            String?
@@ -181,6 +194,8 @@ model Developer {
   replacementsAsIncoming ReplacementTicket[] @relation("IncomingDeveloper")
   scopeSwapsIn     ScopeSwap[]         @relation("ScopeSwapIn")
   scopeSwapsOut    ScopeSwap[]         @relation("ScopeSwapOut")
+  coveragesAsAbsent CoverageAssignment[] @relation("CoverageAbsent")
+  coveragesAsCover  CoverageAssignment[] @relation("CoverageCover")
 }
 
 model Project {
@@ -194,6 +209,7 @@ model Project {
   updatedAt   DateTime @updatedAt
   timesheets  Timesheet[]
   scopeSwaps  ScopeSwap[]
+  coverages   CoverageAssignment[]
 
   @@unique([clientId, code])
 }
@@ -246,9 +262,37 @@ model LeaveRequest {
   reviewedById  String?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
+  coverages     CoverageAssignment[]
 
   @@index([developerId, status])
   @@index([startDate, endDate])
+}
+
+model CoverageAssignment {
+  id              String         @id @default(cuid())
+  clientId        String
+  client          Client         @relation(fields: [clientId], references: [id])
+  projectId       String
+  project         Project        @relation(fields: [projectId], references: [id])
+  leaveRequestId  String?
+  leaveRequest    LeaveRequest?  @relation(fields: [leaveRequestId], references: [id], onDelete: SetNull)
+  absentDeveloperId String
+  absentDeveloper Developer      @relation("CoverageAbsent", fields: [absentDeveloperId], references: [id])
+  coverDeveloperId  String
+  coverDeveloper  Developer      @relation("CoverageCover", fields: [coverDeveloperId], references: [id])
+  status          CoverageStatus @default(PLANNED)
+  startDate       DateTime       @db.Date
+  endDate         DateTime       @db.Date
+  reason          String
+  notes           String?
+  createdById     String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([clientId, status])
+  @@index([absentDeveloperId, startDate, endDate])
+  @@index([coverDeveloperId, startDate, endDate])
+  @@index([projectId])
 }
 
 model MonthlyEvaluation {

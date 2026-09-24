@@ -43,6 +43,7 @@
     "react-hook-form": "^7.88.0",
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.7.0",
+    "xlsx": "^0.18.5",
     "zod": "^4.6.5"
   },
   "devDependencies": {
@@ -50,6 +51,7 @@
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "@types/xlsx": "^0.0.35",
     "eslint": "^8",
     "eslint-config-next": "14.2.35",
     "postcss": "^8",
