@@ -17,8 +17,10 @@ export const config = {
     "/timesheets/:path*",
     "/overtime/:path*",
     "/evaluations/:path*",
+    "/leaderboard/:path*",
     "/scope-swaps/:path*",
     "/reports/:path*",
+    "/access/:path*",
     "/integrations/:path*",
   ],
 };

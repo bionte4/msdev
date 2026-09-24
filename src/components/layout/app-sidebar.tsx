@@ -16,6 +16,8 @@ import {
   FileSpreadsheet,
   Building2,
   UserRoundCog,
+  Trophy,
+  Shield,
   Menu,
   X,
   LogOut,
@@ -25,6 +27,7 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { NotificationBell } from "@/components/layout/notification-bell";
 
 const NAV_ITEMS = [
   { href: "/capacity", label: "Capacity", icon: LayoutDashboard },
@@ -36,8 +39,10 @@ const NAV_ITEMS = [
   { href: "/timesheets", label: "Timesheets", icon: Clock },
   { href: "/overtime", label: "Overtime", icon: Timer },
   { href: "/evaluations", label: "Evaluations", icon: ClipboardCheck },
+  { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
   { href: "/scope-swaps", label: "Scope swaps", icon: ArrowLeftRight },
   { href: "/reports", label: "Reports", icon: FileSpreadsheet },
+  { href: "/access", label: "User access", icon: Shield, adminOnly: true },
   { href: "/integrations", label: "Integrations", icon: Plug },
 ] as const;
 
@@ -70,6 +75,7 @@ export function AppSidebar({
           Governance Portal
         </span>
         <div className="flex items-center gap-0.5">
+          <NotificationBell />
           <Button
             variant="ghost"
             size="icon"
@@ -112,7 +118,12 @@ export function AppSidebar({
         </div>
 
         <nav className="flex-1 space-y-0.5 overflow-y-auto p-2">
-          {NAV_ITEMS.map((item) => {
+          {NAV_ITEMS.filter((item) => {
+            if ("adminOnly" in item && item.adminOnly) {
+              return userRole === "SYS_ADMIN" || userRole === "VENDOR_LEAD";
+            }
+            return true;
+          }).map((item) => {
             const active = pathname.startsWith(item.href);
             return (
               <Link

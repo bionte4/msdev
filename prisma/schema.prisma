@@ -95,6 +95,13 @@ enum PerformanceActionType {
   PUNISHMENT
 }
 
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ALERT
+}
+
 model Client {
   id          String       @id @default(cuid())
   name        String
@@ -120,6 +127,7 @@ model User {
   role           Role
   clientId       String?
   client         Client?    @relation(fields: [clientId], references: [id])
+  isActive       Boolean    @default(true)
   developer      Developer?
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
@@ -127,6 +135,22 @@ model User {
   sessions       Session[]
   evaluationsAsPm MonthlyEvaluation[] @relation("EvaluatedBy")
   scopeSwapsRequested ScopeSwap[] @relation("ScopeSwapRequester")
+  notifications  Notification[]
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  href      String?
+  type      NotificationType @default(INFO)
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
 }
 
 model Account {

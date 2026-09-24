@@ -59,6 +59,7 @@ async function main() {
         role: u.role,
         passwordHash,
         clientId: u.role === "SYS_ADMIN" ? null : client.id,
+        isActive: true,
       },
       create: {
         email: u.email,
@@ -66,6 +67,7 @@ async function main() {
         role: u.role,
         passwordHash,
         clientId: u.role === "SYS_ADMIN" ? null : client.id,
+        isActive: true,
       },
     });
 
@@ -320,6 +322,68 @@ async function main() {
         actionDate: today,
       },
     });
+
+    const pm = await prisma.user.findUnique({
+      where: { email: "pm@acme.example" },
+    });
+    if (pm) {
+      const year = today.getFullYear();
+      const month = today.getMonth() + 1;
+      await prisma.monthlyEvaluation.deleteMany({
+        where: {
+          developerId: { in: [alex.id, ...(jordan ? [jordan.id] : [])] },
+          year,
+          month,
+        },
+      });
+      await prisma.monthlyEvaluation.create({
+        data: {
+          developerId: alex.id,
+          clientId: client.id,
+          evaluatedById: pm.id,
+          year,
+          month,
+          codeQuality: 4.2,
+          delivery: 4.0,
+          technical: 4.1,
+          communication: 3.8,
+          professionalism: 4.0,
+          totalScore: 4.06,
+          comments: "Strong delivery on governance portal",
+        },
+      });
+      if (jordan) {
+        await prisma.monthlyEvaluation.create({
+          data: {
+            developerId: jordan.id,
+            clientId: client.id,
+            evaluatedById: pm.id,
+            year,
+            month,
+            codeQuality: 3.6,
+            delivery: 3.8,
+            technical: 3.5,
+            communication: 3.7,
+            professionalism: 3.9,
+            totalScore: 3.66,
+            comments: "Solid contributor, keep growing ownership",
+          },
+        });
+        await prisma.performanceAction.deleteMany({
+          where: { developerId: jordan.id },
+        });
+        await prisma.performanceAction.create({
+          data: {
+            developerId: jordan.id,
+            actionType: "REWARD",
+            title: "Helpful peer review",
+            reason: "Thorough review of scope-swap rules",
+            points: 5,
+            actionDate: today,
+          },
+        });
+      }
+    }
   }
 
   console.log("Seed complete.");
@@ -327,6 +391,84 @@ async function main() {
   console.log("Login examples:");
   console.log("  pm@acme.example / password123");
   console.log("  developer@acme.example / password123");
+
+  const seededUsers = await prisma.user.findMany({
+    where: {
+      email: {
+        in: [
+          "admin@acme.example",
+          "lead@acme.example",
+          "developer@acme.example",
+          "pm@acme.example",
+        ],
+      },
+    },
+  });
+
+  for (const u of seededUsers) {
+    await prisma.notification.deleteMany({ where: { userId: u.id } });
+  }
+
+  const admin = seededUsers.find((u) => u.email === "admin@acme.example");
+  const lead = seededUsers.find((u) => u.email === "lead@acme.example");
+  const developer = seededUsers.find(
+    (u) => u.email === "developer@acme.example"
+  );
+  const pm = seededUsers.find((u) => u.email === "pm@acme.example");
+
+  if (admin) {
+    await prisma.notification.createMany({
+      data: [
+        {
+          userId: admin.id,
+          title: "User access ready",
+          body: "Manage roles and activate/deactivate accounts from User access.",
+          href: "/access",
+          type: "INFO",
+        },
+        {
+          userId: admin.id,
+          title: "Coverage sample created",
+          body: "Jordan is planned to cover Alex during sick leave.",
+          href: "/coverage",
+          type: "SUCCESS",
+        },
+      ],
+    });
+  }
+  if (lead) {
+    await prisma.notification.create({
+      data: {
+        userId: lead.id,
+        title: "Pending team actions",
+        body: "Review leave coverage and timesheet imports for this week.",
+        href: "/timesheets",
+        type: "WARNING",
+      },
+    });
+  }
+  if (developer) {
+    await prisma.notification.create({
+      data: {
+        userId: developer.id,
+        title: "Jira account linked",
+        body: "Your Jira email is linked on Personnel. Keep it unique.",
+        href: "/personnel",
+        type: "SUCCESS",
+      },
+    });
+  }
+  if (pm) {
+    await prisma.notification.create({
+      data: {
+        userId: pm.id,
+        title: "Leaderboard updated",
+        body: "Monthly evaluation scores are available on the leaderboard.",
+        href: "/leaderboard",
+        type: "INFO",
+      },
+    });
+  }
 }
 
 main()

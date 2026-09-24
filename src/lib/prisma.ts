@@ -5,7 +5,7 @@ const globalForPrisma = globalThis as unknown as {
   prismaVersion?: string;
 };
 
-const PRISMA_CLIENT_VERSION = "development-v8-coverage-clients-fix";
+const PRISMA_CLIENT_VERSION = "development-v9-notifications-access";
 
 function createPrismaClient(): PrismaClient {
   return new PrismaClient({
@@ -18,10 +18,12 @@ function getPrismaClient(): PrismaClient {
   const versionOk = globalForPrisma.prismaVersion === PRISMA_CLIENT_VERSION;
   const hasModels =
     existing &&
-    typeof (existing as { skill?: unknown }).skill !== "undefined" &&
-    typeof (existing as { skillCategory?: unknown }).skillCategory !==
+    typeof (existing as { notification?: unknown }).notification !==
       "undefined" &&
     typeof (existing as { coverageAssignment?: unknown }).coverageAssignment !==
+      "undefined" &&
+    typeof (existing as { skill?: unknown }).skill !== "undefined" &&
+    typeof (existing as { skillCategory?: unknown }).skillCategory !==
       "undefined" &&
     typeof (existing as { training?: unknown }).training !== "undefined" &&
     typeof (existing as { coaching?: unknown }).coaching !== "undefined" &&

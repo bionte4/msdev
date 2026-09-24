@@ -30,6 +30,10 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
+        if (!user.isActive) {
+          return null;
+        }
+
         const valid = await compare(credentials.password, user.passwordHash);
         if (!valid) {
           return null;

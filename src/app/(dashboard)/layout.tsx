@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { AppSidebar } from "@/components/layout/app-sidebar";
+import { DashboardTopbar } from "@/components/layout/dashboard-topbar";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,7 @@ export default async function DashboardLayout({
       />
       <main className="min-w-0 flex-1 overflow-auto">
         <div className="mx-auto max-w-7xl px-3 py-4 sm:px-5 lg:px-6 lg:py-5">
+          <DashboardTopbar />
           {children}
         </div>
       </main>
