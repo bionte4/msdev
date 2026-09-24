@@ -3,10 +3,12 @@ import { listProjects } from "@/lib/actions/projects";
 import { ProjectCrud } from "@/components/features/projects/project-crud";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
+import { requireRouteRole } from "@/lib/require-route-role";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProjectsPage() {
+  await requireRouteRole("/projects");
   const session = await auth();
   const result = await listProjects();
 

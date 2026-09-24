@@ -1,21 +1,15 @@
 import { auth } from "@/lib/auth";
-import { redirect } from "next/navigation";
 import { listAccessUsers } from "@/lib/actions/access";
 import { AccessAdmin } from "@/components/features/access/access-admin";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
+import { requireRouteRole } from "@/lib/require-route-role";
 
 export const dynamic = "force-dynamic";
 
 export default async function AccessPage() {
+  await requireRouteRole("/access");
   const session = await auth();
-  if (
-    !session ||
-    (session.user.role !== "SYS_ADMIN" && session.user.role !== "VENDOR_LEAD")
-  ) {
-    redirect("/capacity");
-  }
-
   const result = await listAccessUsers();
 
   return (
@@ -23,7 +17,7 @@ export default async function AccessPage() {
       <PageHeader
         title="User access"
         description="Administration · roles, clients, activate / deactivate"
-        actions={<Badge variant="secondary">{session.user.role}</Badge>}
+        actions={<Badge variant="secondary">{session?.user.role}</Badge>}
       />
       {result.success ? (
         <AccessAdmin

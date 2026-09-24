@@ -1,6 +1,7 @@
 # Outsourcing Governance Portal
 
-Local-first Next.js 14 app for capacity, timesheets, overtime approvals, evaluations, and scope swaps.
+Local-first Next.js 14 app for Managed Service & IT Staff Augmentation governance:
+capacity, personnel, timesheets, overtime, evaluations, coverage, development, and scope swaps.
 
 ## Stack
 
@@ -15,13 +16,57 @@ Local-first Next.js 14 app for capacity, timesheets, overtime approvals, evaluat
 | Route | Feature |
 | --- | --- |
 | `/capacity` | Weekly capacity dashboard |
+| `/clients` | Client organizations (tenant) |
+| `/projects` | Project CRUD · timesheet & scope-swap targets |
 | `/personnel` | Developer roster + leave (cuti/sakit) CRUD |
+| `/coverage` | Leave coverage assignments |
 | `/development` | Skillset · training · coaching · reward/punishment |
-| `/timesheets` | Timesheet CRUD with RBAC |
+| `/timesheets` | Timesheet CRUD · period filter · Excel import |
 | `/overtime` | OT pre-approval workflow |
 | `/evaluations` | Monthly scorecard + replacement ticket |
+| `/leaderboard` | Ranking by evaluation, rewards, or hours |
 | `/scope-swaps` | 1-in / 1-out scope swap |
-| `/integrations` | Email, SMTP, Jira, ServiceNow config cards |
+| `/reports` | Operational reports · Excel export |
+| `/access` | User access admin (activate / roles) |
+| `/integrations` | Email, SMTP, Jira, ServiceNow config |
+
+## RBAC
+
+Route access is centralized in `src/lib/rbac-routes.ts` (sidebar + page guards).
+Server Actions enforce `assertRole` and tenant/`developerId` scope.
+
+### Menu access
+
+| Menu | SYS_ADMIN | CLIENT_PM | VENDOR_LEAD | VENDOR_AM | DEVELOPER |
+| --- | --- | --- | --- | --- | --- |
+| Capacity | ✓ | ✓ | ✓ | ✓ | — |
+| Clients | ✓ | ✓ | ✓ | ✓ | — |
+| Projects | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Personnel | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Coverage | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Development | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Timesheets | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Overtime | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Evaluations | ✓ | ✓ | ✓ | ✓ | — |
+| Leaderboard | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Scope swaps | ✓ | ✓ | ✓ | ✓ | — |
+| Reports | ✓ | ✓ | ✓ | ✓ | ✓ |
+| User access | ✓ | — | ✓ | — | — |
+| Integrations | ✓ | — | ✓ | — | — |
+
+### CRUD / data scope (summary)
+
+| Role | Scope | Typical mutate rights |
+| --- | --- | --- |
+| **SYS_ADMIN** | All clients | Full admin |
+| **CLIENT_PM** | Own `clientId` | Projects, evaluations, OT review, leave review, scope swaps; timesheets read-only |
+| **VENDOR_LEAD** | Own `clientId` | Personnel, coverage, development, timesheets, leave, scope swaps, user access |
+| **VENDOR_AM** | Own `clientId` | Personnel, coverage, training/coaching/skills; timesheets & OT read-only; evaluations/scope swaps view-only |
+| **DEVELOPER** | Own `developerId` | Own timesheets, OT, leave, skills, Jira link; coverage/projects/reports self-scoped |
+
+Post-login home: DEVELOPER → `/timesheets`; other roles → `/capacity`.
+
+Unauthorized routes redirect to the role home path via `requireRouteRole`.
 
 ## Local setup
 
@@ -52,10 +97,12 @@ Open [http://localhost:3000](http://localhost:3000)
 
 | Email | Role | Password |
 | --- | --- | --- |
-| `pm@acme.example` | CLIENT_PM | `password123` |
-| `developer@acme.example` | DEVELOPER | `password123` |
 | `admin@acme.example` | SYS_ADMIN | `password123` |
+| `pm@acme.example` | CLIENT_PM | `password123` |
 | `lead@acme.example` | VENDOR_LEAD | `password123` |
+| `am@acme.example` | VENDOR_AM | `password123` |
+| `developer@acme.example` | DEVELOPER | `password123` |
+| `dev2@acme.example` | DEVELOPER | `password123` |
 
 ## Useful commands
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { signIn } from "next-auth/react";
+import { getSession, signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
@@ -15,6 +15,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { homePathForRole } from "@/lib/rbac-routes";
 
 interface DemoAccount {
   label: string;
@@ -26,6 +27,7 @@ const DEMO_ACCOUNTS: DemoAccount[] = [
   { label: "Client PM", email: "pm@acme.example", role: "CLIENT_PM" },
   { label: "Developer", email: "developer@acme.example", role: "DEVELOPER" },
   { label: "Vendor Lead", email: "lead@acme.example", role: "VENDOR_LEAD" },
+  { label: "Vendor AM", email: "am@acme.example", role: "VENDOR_AM" },
   { label: "Admin", email: "admin@acme.example", role: "SYS_ADMIN" },
 ];
 
@@ -52,7 +54,8 @@ export default function LoginForm() {
     }
 
     toast.success("Signed in");
-    router.push("/capacity");
+    const session = await getSession();
+    router.push(homePathForRole(session?.user?.role));
     router.refresh();
   }
 

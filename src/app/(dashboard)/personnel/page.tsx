@@ -6,10 +6,12 @@ import { PersonnelCrud } from "@/components/features/personnel/personnel-crud";
 import { LeaveCrud } from "@/components/features/personnel/leave-crud";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
+import { requireRouteRole } from "@/lib/require-route-role";
 
 export const dynamic = "force-dynamic";
 
 export default async function PersonnelPage() {
+  await requireRouteRole("/personnel");
   const session = await auth();
 
   const [personnelResult, leaveResult, developersResult] = await Promise.all([

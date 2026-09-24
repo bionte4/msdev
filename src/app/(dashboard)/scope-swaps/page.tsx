@@ -1,3 +1,4 @@
+import { auth } from "@/lib/auth";
 import {
   getScopeSwapFormOptions,
   listScopeSwaps,
@@ -5,12 +6,25 @@ import {
 import { ScopeSwapForm } from "@/components/features/scope-swaps/scope-swap-form";
 import { ScopeSwapList } from "@/components/features/scope-swaps/scope-swap-list";
 import { PageHeader } from "@/components/layout/page-header";
+import { requireRouteRole } from "@/lib/require-route-role";
 
 export const dynamic = "force-dynamic";
 
 export default async function ScopeSwapsPage() {
+  await requireRouteRole("/scope-swaps");
+  const session = await auth();
+  const canCreate =
+    session?.user.role === "CLIENT_PM" ||
+    session?.user.role === "VENDOR_LEAD" ||
+    session?.user.role === "SYS_ADMIN";
+
   const [optionsResult, listResult] = await Promise.all([
-    getScopeSwapFormOptions(),
+    canCreate
+      ? getScopeSwapFormOptions()
+      : Promise.resolve({
+          success: true as const,
+          data: { projects: [], developers: [] },
+        }),
     listScopeSwaps(),
   ]);
 
@@ -21,15 +35,23 @@ export default async function ScopeSwapsPage() {
         description="1-in / 1-out with equal story points and hours"
       />
 
-      {optionsResult.success ? (
-        <ScopeSwapForm
-          projects={optionsResult.data.projects}
-          developers={optionsResult.data.developers}
-        />
-      ) : (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
-          {optionsResult.error}
-        </div>
+      {canCreate &&
+        (optionsResult.success ? (
+          <ScopeSwapForm
+            projects={optionsResult.data.projects}
+            developers={optionsResult.data.developers}
+          />
+        ) : (
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
+            {optionsResult.error}
+          </div>
+        ))}
+
+      {!canCreate && (
+        <p className="text-[12px] text-slate-500">
+          View-only · creating scope swaps is limited to Client PM and Vendor
+          Lead.
+        </p>
       )}
 
       {listResult.success ? (

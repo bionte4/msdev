@@ -94,7 +94,7 @@ export async function listIntegrations(): Promise<
 > {
   try {
     const session = await auth();
-    assertRole(session, ["SYS_ADMIN", "CLIENT_PM", "VENDOR_LEAD"]);
+    assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD"]);
 
     await ensureDefaults();
 

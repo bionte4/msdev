@@ -2,10 +2,12 @@ import { auth } from "@/lib/auth";
 import { listOvertimeRequests } from "@/lib/actions/overtime";
 import { OvertimePageClient } from "@/components/features/overtime/overtime-page-client";
 import { PageHeader } from "@/components/layout/page-header";
+import { requireRouteRole } from "@/lib/require-route-role";
 
 export const dynamic = "force-dynamic";
 
 export default async function OvertimePage() {
+  await requireRouteRole("/overtime");
   const session = await auth();
   const listResult = await listOvertimeRequests();
 

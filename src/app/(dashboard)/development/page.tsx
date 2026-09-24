@@ -3,10 +3,12 @@ import { DevelopmentBoard } from "@/components/features/development/development-
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { auth } from "@/lib/auth";
+import { requireRouteRole } from "@/lib/require-route-role";
 
 export const dynamic = "force-dynamic";
 
 export default async function DevelopmentPage() {
+  await requireRouteRole("/development");
   const session = await auth();
   const result = await getDevelopmentBoard();
 

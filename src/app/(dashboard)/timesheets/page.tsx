@@ -7,6 +7,7 @@ import {
 import { TimesheetCrud } from "@/components/features/timesheets/timesheet-crud";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
+import { requireRouteRole } from "@/lib/require-route-role";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,7 @@ function roleHint(role: string | undefined): string {
 }
 
 export default async function TimesheetsPage() {
+  await requireRouteRole("/timesheets");
   const session = await auth();
   const canMutate =
     session?.user.role === "DEVELOPER" ||

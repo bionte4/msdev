@@ -26,24 +26,95 @@ import {
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { ROUTE_ROLES } from "@/lib/rbac-routes";
 import { Button } from "@/components/ui/button";
 import { NotificationBell } from "@/components/layout/notification-bell";
 
 const NAV_ITEMS = [
-  { href: "/capacity", label: "Capacity", icon: LayoutDashboard },
-  { href: "/clients", label: "Clients", icon: Building2 },
-  { href: "/projects", label: "Projects", icon: FolderKanban },
-  { href: "/personnel", label: "Personnel", icon: Users },
-  { href: "/coverage", label: "Coverage", icon: UserRoundCog },
-  { href: "/development", label: "Development", icon: GraduationCap },
-  { href: "/timesheets", label: "Timesheets", icon: Clock },
-  { href: "/overtime", label: "Overtime", icon: Timer },
-  { href: "/evaluations", label: "Evaluations", icon: ClipboardCheck },
-  { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
-  { href: "/scope-swaps", label: "Scope swaps", icon: ArrowLeftRight },
-  { href: "/reports", label: "Reports", icon: FileSpreadsheet },
-  { href: "/access", label: "User access", icon: Shield, adminOnly: true },
-  { href: "/integrations", label: "Integrations", icon: Plug },
+  {
+    href: "/capacity",
+    label: "Capacity",
+    icon: LayoutDashboard,
+    roles: ROUTE_ROLES["/capacity"],
+  },
+  {
+    href: "/clients",
+    label: "Clients",
+    icon: Building2,
+    roles: ROUTE_ROLES["/clients"],
+  },
+  {
+    href: "/projects",
+    label: "Projects",
+    icon: FolderKanban,
+    roles: ROUTE_ROLES["/projects"],
+  },
+  {
+    href: "/personnel",
+    label: "Personnel",
+    icon: Users,
+    roles: ROUTE_ROLES["/personnel"],
+  },
+  {
+    href: "/coverage",
+    label: "Coverage",
+    icon: UserRoundCog,
+    roles: ROUTE_ROLES["/coverage"],
+  },
+  {
+    href: "/development",
+    label: "Development",
+    icon: GraduationCap,
+    roles: ROUTE_ROLES["/development"],
+  },
+  {
+    href: "/timesheets",
+    label: "Timesheets",
+    icon: Clock,
+    roles: ROUTE_ROLES["/timesheets"],
+  },
+  {
+    href: "/overtime",
+    label: "Overtime",
+    icon: Timer,
+    roles: ROUTE_ROLES["/overtime"],
+  },
+  {
+    href: "/evaluations",
+    label: "Evaluations",
+    icon: ClipboardCheck,
+    roles: ROUTE_ROLES["/evaluations"],
+  },
+  {
+    href: "/leaderboard",
+    label: "Leaderboard",
+    icon: Trophy,
+    roles: ROUTE_ROLES["/leaderboard"],
+  },
+  {
+    href: "/scope-swaps",
+    label: "Scope swaps",
+    icon: ArrowLeftRight,
+    roles: ROUTE_ROLES["/scope-swaps"],
+  },
+  {
+    href: "/reports",
+    label: "Reports",
+    icon: FileSpreadsheet,
+    roles: ROUTE_ROLES["/reports"],
+  },
+  {
+    href: "/access",
+    label: "User access",
+    icon: Shield,
+    roles: ROUTE_ROLES["/access"],
+  },
+  {
+    href: "/integrations",
+    label: "Integrations",
+    icon: Plug,
+    roles: ROUTE_ROLES["/integrations"],
+  },
 ] as const;
 
 export interface AppSidebarProps {
@@ -118,12 +189,9 @@ export function AppSidebar({
         </div>
 
         <nav className="flex-1 space-y-0.5 overflow-y-auto p-2">
-          {NAV_ITEMS.filter((item) => {
-            if ("adminOnly" in item && item.adminOnly) {
-              return userRole === "SYS_ADMIN" || userRole === "VENDOR_LEAD";
-            }
-            return true;
-          }).map((item) => {
+          {NAV_ITEMS.filter((item) =>
+            userRole ? (item.roles as readonly string[]).includes(userRole) : false
+          ).map((item) => {
             const active = pathname.startsWith(item.href);
             return (
               <Link

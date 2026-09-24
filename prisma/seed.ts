@@ -47,6 +47,7 @@ async function main() {
     { email: "admin@acme.example", name: "System Admin", role: "SYS_ADMIN" },
     { email: "pm@acme.example", name: "Client PM", role: "CLIENT_PM" },
     { email: "lead@acme.example", name: "Vendor Lead", role: "VENDOR_LEAD" },
+    { email: "am@acme.example", name: "Vendor AM", role: "VENDOR_AM" },
     { email: "developer@acme.example", name: "Alex Developer", role: "DEVELOPER" },
     { email: "dev2@acme.example", name: "Jordan Developer", role: "DEVELOPER" },
   ];

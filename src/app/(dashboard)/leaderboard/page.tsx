@@ -3,10 +3,12 @@ import { getLeaderboard } from "@/lib/actions/leaderboard";
 import { LeaderboardBoard } from "@/components/features/leaderboard/leaderboard-board";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
+import { requireRouteRole } from "@/lib/require-route-role";
 
 export const dynamic = "force-dynamic";
 
 export default async function LeaderboardPage() {
+  await requireRouteRole("/leaderboard");
   const session = await auth();
   const now = new Date();
   const result = await getLeaderboard({

@@ -2,10 +2,12 @@ import { auth } from "@/lib/auth";
 import { ReportsBoard } from "@/components/features/reports/reports-board";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
+import { requireRouteRole } from "@/lib/require-route-role";
 
 export const dynamic = "force-dynamic";
 
 export default async function ReportsPage() {
+  await requireRouteRole("/reports");
   const session = await auth();
   const role = session?.user.role;
   const canExportAll =

@@ -3,10 +3,12 @@ import { listClients } from "@/lib/actions/clients";
 import { ClientCrud } from "@/components/features/clients/client-crud";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
+import { requireRouteRole } from "@/lib/require-route-role";
 
 export const dynamic = "force-dynamic";
 
 export default async function ClientsPage() {
+  await requireRouteRole("/clients");
   const session = await auth();
   const result = await listClients();
 

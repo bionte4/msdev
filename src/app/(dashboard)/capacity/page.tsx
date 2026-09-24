@@ -1,9 +1,11 @@
 import { getWeeklyCapacityDashboard } from "@/lib/actions/capacity";
 import { CapacityDashboard } from "@/components/features/capacity/capacity-dashboard";
+import { requireRouteRole } from "@/lib/require-route-role";
 
 export const dynamic = "force-dynamic";
 
 export default async function CapacityPage() {
+  await requireRouteRole("/capacity");
   const result = await getWeeklyCapacityDashboard();
 
   if (!result.success) {

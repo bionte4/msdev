@@ -42,7 +42,7 @@ function perms(role: Role): DevelopmentPermissions {
   const pm = role === "CLIENT_PM";
   return {
     canManageCatalog: lead,
-    canAssignSkills: lead || role === "VENDOR_AM",
+    canAssignSkills: lead || role === "VENDOR_AM" || role === "DEVELOPER",
     canManageTraining: lead || role === "VENDOR_AM",
     canManageCoaching: lead || role === "VENDOR_AM",
     canManagePerformance: lead || pm,

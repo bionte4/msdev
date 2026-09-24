@@ -2,10 +2,12 @@ import { auth } from "@/lib/auth";
 import { listIntegrations } from "@/lib/actions/integrations";
 import { IntegrationsBoard } from "@/components/features/integrations/integrations-board";
 import { PageHeader } from "@/components/layout/page-header";
+import { requireRouteRole } from "@/lib/require-route-role";
 
 export const dynamic = "force-dynamic";
 
 export default async function IntegrationsPage() {
+  await requireRouteRole("/integrations");
   const session = await auth();
   const result = await listIntegrations();
   const canEdit = session?.user.role === "SYS_ADMIN";

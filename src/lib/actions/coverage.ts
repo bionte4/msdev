@@ -233,27 +233,33 @@ export async function listCoverages(): Promise<
         orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
         take: 100,
       }),
-      prisma.project.findMany({
-        where: { isActive: true, ...clientFilter },
-        orderBy: { name: "asc" },
-        select: { id: true, name: true, code: true },
-      }),
-      prisma.developer.findMany({
-        where: { isActive: true, ...clientFilter },
-        include: { user: { select: { name: true } } },
-        orderBy: { user: { name: "asc" } },
-      }),
-      prisma.leaveRequest.findMany({
-        where: {
-          status: { in: ["PENDING", "APPROVED"] },
-          developer: clientFilter,
-        },
-        include: {
-          developer: { include: { user: { select: { name: true } } } },
-        },
-        orderBy: { startDate: "desc" },
-        take: 50,
-      }),
+      perms.canCreate
+        ? prisma.project.findMany({
+            where: { isActive: true, ...clientFilter },
+            orderBy: { name: "asc" },
+            select: { id: true, name: true, code: true },
+          })
+        : Promise.resolve([]),
+      perms.canCreate
+        ? prisma.developer.findMany({
+            where: { isActive: true, ...clientFilter },
+            include: { user: { select: { name: true } } },
+            orderBy: { user: { name: "asc" } },
+          })
+        : Promise.resolve([]),
+      perms.canCreate
+        ? prisma.leaveRequest.findMany({
+            where: {
+              status: { in: ["PENDING", "APPROVED"] },
+              developer: clientFilter,
+            },
+            include: {
+              developer: { include: { user: { select: { name: true } } } },
+            },
+            orderBy: { startDate: "desc" },
+            take: 50,
+          })
+        : Promise.resolve([]),
     ]);
 
     return ok({
