@@ -3,6 +3,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { auth, assertRole } from "@/lib/auth";
+import { testJiraConnection } from "@/lib/jira/client";
 import {
   DEFAULT_INTEGRATION_CONFIGS,
   upsertIntegrationSchema,
@@ -253,7 +254,13 @@ export async function testIntegration(
         status = "FAILED";
         message = "Jira URL, email, API token, and project key are required.";
       } else {
-        message = `Jira project ${String(config.projectKey)} ready at ${String(config.baseUrl)} (dry-run).`;
+        const live = await testJiraConnection();
+        if (!live.ok) {
+          status = "FAILED";
+          message = live.error;
+        } else {
+          message = `Connected as ${live.myself.displayName} · project ${live.project.key} (${live.project.name})`;
+        }
       }
     }
 

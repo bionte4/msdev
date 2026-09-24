@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
+  PlugZap,
   Link2,
   Link2Off,
   Loader2,
@@ -37,6 +38,7 @@ import {
   createPersonnel,
   deactivatePersonnel,
   linkJiraAccount,
+  testPersonnelJiraConnection,
   unlinkJiraAccount,
   updatePersonnel,
   type PersonnelItem,
@@ -88,6 +90,7 @@ export function PersonnelCrud({ items, permissions }: PersonnelCrudProps) {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [jiraLinkFor, setJiraLinkFor] = useState<PersonnelItem | null>(null);
   const [jiraEmailDraft, setJiraEmailDraft] = useState("");
+  const [jiraTestHint, setJiraTestHint] = useState<string | null>(null);
 
   function refresh() {
     router.refresh();
@@ -95,6 +98,7 @@ export function PersonnelCrud({ items, permissions }: PersonnelCrudProps) {
 
   function openCreate() {
     setForm(emptyForm());
+    setJiraTestHint(null);
     setOpen(true);
   }
 
@@ -114,12 +118,39 @@ export function PersonnelCrud({ items, permissions }: PersonnelCrudProps) {
       notes: item.notes ?? "",
       isActive: item.isActive,
     });
+    setJiraTestHint(null);
     setOpen(true);
   }
 
   function openJiraLink(item: PersonnelItem) {
     setJiraLinkFor(item);
     setJiraEmailDraft(item.jiraAccountEmail ?? item.email);
+    setJiraTestHint(null);
+  }
+
+  async function runJiraTest(params: {
+    email: string;
+    developerId?: string;
+  }): Promise<boolean> {
+    const email = params.email.trim();
+    if (!email) {
+      toast.error("Enter a Jira account email first");
+      return false;
+    }
+    const result = await testPersonnelJiraConnection({
+      developerId: params.developerId,
+      jiraAccountEmail: email,
+    });
+    if (!result.success) {
+      toast.error(result.error);
+      setJiraTestHint(result.error);
+      return false;
+    }
+    toast.success(result.data.message);
+    setJiraTestHint(
+      `Verified · ${result.data.displayName} · ${result.data.accountId}`
+    );
+    return true;
   }
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -193,7 +224,9 @@ export function PersonnelCrud({ items, permissions }: PersonnelCrudProps) {
         toast.error(result.error);
         return;
       }
-      toast.success(`Jira linked for ${jiraLinkFor.name}`);
+      toast.success(
+        `Jira verified & linked for ${jiraLinkFor.name}`
+      );
       setJiraLinkFor(null);
       refresh();
     });
@@ -225,9 +258,15 @@ export function PersonnelCrud({ items, permissions }: PersonnelCrudProps) {
 
   return (
     <div className="page-stack">
+      <div className="rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-[12px] text-sky-900">
+        Jira live verify aktif · tiap developer 1 akun · cari tombol{" "}
+        <span className="font-semibold">Test Jira connection</span> /{" "}
+        <span className="font-semibold">Test connection</span> di form Edit,
+        panel Link, atau ikon plug di roster.
+      </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[12px] text-slate-500">
-          1 developer = 1 Jira account · link / unlink with RBAC
+          1 developer = 1 Jira account · Test connection before link
         </p>
         {permissions.canCreate && (
           <Button size="sm" onClick={openCreate} disabled={isPending}>
@@ -245,7 +284,7 @@ export function PersonnelCrud({ items, permissions }: PersonnelCrudProps) {
                 {form.id ? "Edit personnel" : "Add personnel"}
               </CardTitle>
               <CardDescription>
-                Creates DEVELOPER login when adding · optional Jira email
+                Optional Jira email · gunakan tombol Test Jira connection di bawah
               </CardDescription>
             </div>
             <Button
@@ -340,23 +379,53 @@ export function PersonnelCrud({ items, permissions }: PersonnelCrudProps) {
                     required
                   />
                 </div>
-                <div className="space-y-1 sm:col-span-2">
-                  <Label htmlFor="jiraAccountEmail">Jira account email</Label>
+                <div className="space-y-2 sm:col-span-2 rounded-md border border-sky-200 bg-sky-50/80 p-3">
+                  <Label htmlFor="jiraAccountEmail" className="text-sky-900">
+                    Jira account email (1 developer = 1 account)
+                  </Label>
                   <Input
                     id="jiraAccountEmail"
                     type="email"
                     placeholder="alex@company.atlassian.net"
                     value={form.jiraAccountEmail}
-                    onChange={(e) =>
+                    onChange={(e) => {
                       setForm((p) => ({
                         ...p,
                         jiraAccountEmail: e.target.value,
-                      }))
-                    }
+                      }));
+                      setJiraTestHint(null);
+                    }}
                   />
-                  <p className="text-[11px] text-slate-400">
-                    Unique across roster · leave blank to link later
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="w-full sm:w-auto bg-sky-700 text-white hover:bg-sky-800"
+                    disabled={isPending || !form.jiraAccountEmail.trim()}
+                    onClick={() =>
+                      startTransition(async () => {
+                        await runJiraTest({
+                          email: form.jiraAccountEmail,
+                          developerId: form.id,
+                        });
+                      })
+                    }
+                  >
+                    {isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <PlugZap className="h-3.5 w-3.5" />
+                    )}
+                    Test Jira connection
+                  </Button>
+                  <p className="text-[11px] text-sky-800/80">
+                    Cek email ke Jira API + pastikan belum dipakai developer
+                    lain. Butuh Integrations → Jira aktif.
                   </p>
+                  {jiraTestHint && (
+                    <p className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[11px] text-emerald-800">
+                      {jiraTestHint}
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-1 sm:col-span-2">
                   <Label htmlFor="skills">Skills (comma-separated)</Label>
@@ -426,12 +495,12 @@ export function PersonnelCrud({ items, permissions }: PersonnelCrudProps) {
       )}
 
       {jiraLinkFor && (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+        <Card className="border-sky-300 shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 bg-sky-50">
             <div>
               <CardTitle>Link Jira account</CardTitle>
               <CardDescription>
-                {jiraLinkFor.name} · 1:1 mapping to Atlassian account
+                {jiraLinkFor.name} · test connection dulu, baru link & verify
               </CardDescription>
             </div>
             <Button
@@ -443,30 +512,81 @@ export function PersonnelCrud({ items, permissions }: PersonnelCrudProps) {
               <X className="h-4 w-4" />
             </Button>
           </CardHeader>
-          <CardContent>
-            <form
-              onSubmit={handleLinkJira}
-              className="flex flex-col gap-2 sm:flex-row sm:items-end"
-            >
-              <div className="min-w-0 flex-1 space-y-1">
-                <Label htmlFor="jira-link-email">Jira email</Label>
-                <Input
-                  id="jira-link-email"
-                  type="email"
-                  value={jiraEmailDraft}
-                  onChange={(e) => setJiraEmailDraft(e.target.value)}
-                  required
-                />
-              </div>
-              <Button type="submit" size="sm" disabled={isPending}>
+          <CardContent className="space-y-3 pt-4">
+            <div className="space-y-1">
+              <Label htmlFor="jira-link-email">Jira email</Label>
+              <Input
+                id="jira-link-email"
+                type="email"
+                value={jiraEmailDraft}
+                onChange={(e) => {
+                  setJiraEmailDraft(e.target.value);
+                  setJiraTestHint(null);
+                }}
+                required
+              />
+            </div>
+            {jiraTestHint && (
+              <p className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[11px] text-emerald-800">
+                {jiraTestHint}
+              </p>
+            )}
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button
+                type="button"
+                size="sm"
+                className="bg-sky-700 text-white hover:bg-sky-800"
+                disabled={isPending || !jiraEmailDraft.trim()}
+                onClick={() =>
+                  startTransition(async () => {
+                    await runJiraTest({
+                      email: jiraEmailDraft,
+                      developerId: jiraLinkFor.id,
+                    });
+                  })
+                }
+              >
+                {isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <PlugZap className="h-3.5 w-3.5" />
+                )}
+                Test connection
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={isPending || !jiraEmailDraft.trim()}
+                onClick={() =>
+                  startTransition(async () => {
+                    const result = await linkJiraAccount({
+                      developerId: jiraLinkFor.id,
+                      jiraAccountEmail: jiraEmailDraft.trim(),
+                    });
+                    if (!result.success) {
+                      toast.error(result.error);
+                      return;
+                    }
+                    toast.success(
+                      `Jira verified & linked for ${jiraLinkFor.name}`
+                    );
+                    setJiraLinkFor(null);
+                    refresh();
+                  })
+                }
+              >
                 {isPending ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
                   <Link2 className="h-3.5 w-3.5" />
                 )}
-                Save link
+                Link & verify
               </Button>
-            </form>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Test = cek API Jira + unik di roster (tanpa simpan). Link & verify
+              = simpan email + accountId.
+            </p>
           </CardContent>
         </Card>
       )}
@@ -490,7 +610,7 @@ export function PersonnelCrud({ items, permissions }: PersonnelCrudProps) {
                   <TableHead>Jira</TableHead>
                   <TableHead className="hidden lg:table-cell">Rate</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="w-[120px]">Actions</TableHead>
+                  <TableHead className="w-[148px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -513,9 +633,21 @@ export function PersonnelCrud({ items, permissions }: PersonnelCrudProps) {
                           <div className="text-[12px] text-slate-800">
                             {item.jiraAccountEmail}
                           </div>
-                          <Badge variant="success" className="mt-0.5">
-                            Linked
-                          </Badge>
+                          {item.jiraAccountId ? (
+                            <div className="mt-0.5 space-y-0.5">
+                              <Badge variant="success">Verified</Badge>
+                              <div
+                                className="max-w-[160px] truncate font-mono text-[10px] text-slate-400"
+                                title={item.jiraAccountId}
+                              >
+                                {item.jiraAccountId}
+                              </div>
+                            </div>
+                          ) : (
+                            <Badge variant="warning" className="mt-0.5">
+                              Unverified
+                            </Badge>
+                          )}
                         </div>
                       ) : (
                         <Badge variant="secondary">Not linked</Badge>
@@ -543,6 +675,26 @@ export function PersonnelCrud({ items, permissions }: PersonnelCrudProps) {
                             aria-label="Edit"
                           >
                             <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {item.canLinkJira && item.jiraAccountEmail && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            disabled={isPending}
+                            onClick={() =>
+                              startTransition(async () => {
+                                await runJiraTest({
+                                  email: item.jiraAccountEmail!,
+                                  developerId: item.id,
+                                });
+                              })
+                            }
+                            aria-label="Test Jira connection"
+                            title="Test Jira connection"
+                          >
+                            <PlugZap className="h-3.5 w-3.5" />
                           </Button>
                         )}
                         {item.canLinkJira && (

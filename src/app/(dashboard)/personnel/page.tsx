@@ -3,6 +3,7 @@ import { listPersonnel } from "@/lib/actions/personnel";
 import { listLeaveRequests } from "@/lib/actions/leave";
 import { getDevelopersForTimesheet } from "@/lib/actions/timesheets";
 import { PersonnelCrud } from "@/components/features/personnel/personnel-crud";
+// cache-bust 2026-09-24-jira-test-btn
 import { LeaveCrud } from "@/components/features/personnel/leave-crud";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +27,7 @@ export default async function PersonnelPage() {
     <div className="page-stack">
       <PageHeader
         title="Personnel"
-        description="Developer roster · cuti / sakit / unpaid leave"
+        description="Developer roster · Jira 1:1 live verify · cuti / sakit"
         actions={
           <Badge variant="secondary">{session?.user.role}</Badge>
         }

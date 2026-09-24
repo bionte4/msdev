@@ -64,11 +64,21 @@ export const unlinkJiraAccountSchema = z.object({
   developerId: z.string().min(1),
 });
 
+export const testPersonnelJiraSchema = z.object({
+  developerId: z.string().min(1).optional(),
+  jiraAccountEmail: z
+    .string()
+    .trim()
+    .email("Valid Jira account email is required")
+    .transform((v) => v.toLowerCase()),
+});
+
 export type CreatePersonnelInput = z.infer<typeof createPersonnelSchema>;
 export type UpdatePersonnelInput = z.infer<typeof updatePersonnelSchema>;
 export type DeactivatePersonnelInput = z.infer<typeof deactivatePersonnelSchema>;
 export type LinkJiraAccountInput = z.infer<typeof linkJiraAccountSchema>;
 export type UnlinkJiraAccountInput = z.infer<typeof unlinkJiraAccountSchema>;
+export type TestPersonnelJiraInput = z.infer<typeof testPersonnelJiraSchema>;
 
 export function parseSkillTags(value?: string | null): string[] {
   if (!value) return [];

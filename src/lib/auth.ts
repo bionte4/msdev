@@ -22,37 +22,43 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email },
-          include: {
-            developer: true,
-            client: { select: { engagementMode: true } },
-          },
-        });
+        try {
+          const user = await prisma.user.findUnique({
+            where: { email: credentials.email },
+            include: {
+              developer: true,
+              client: { select: { engagementMode: true } },
+            },
+          });
 
-        if (!user?.passwordHash) {
+          if (!user?.passwordHash) {
+            return null;
+          }
+
+          if (!user.isActive) {
+            return null;
+          }
+
+          const valid = await compare(credentials.password, user.passwordHash);
+          if (!valid) {
+            return null;
+          }
+
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role as Role,
+            clientId: user.clientId,
+            developerId: user.developer?.id ?? null,
+            engagementMode:
+              (user.client?.engagementMode as EngagementMode | undefined) ??
+              null,
+          };
+        } catch (error) {
+          console.error("[auth] login failed:", error);
           return null;
         }
-
-        if (!user.isActive) {
-          return null;
-        }
-
-        const valid = await compare(credentials.password, user.passwordHash);
-        if (!valid) {
-          return null;
-        }
-
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role as Role,
-          clientId: user.clientId,
-          developerId: user.developer?.id ?? null,
-          engagementMode:
-            (user.client?.engagementMode as EngagementMode | undefined) ?? null,
-        };
       },
     }),
   ],

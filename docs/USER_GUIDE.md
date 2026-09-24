@@ -111,7 +111,7 @@ Ada dua bagian: **roster developer** dan **leave (cuti/sakit/unpaid)**.
 | Tambah / edit / nonaktifkan personil | Admin, Vendor Lead, Vendor AM |
 | Lihat roster | Client PM (+ role di atas) |
 | Lihat & kelola profil sendiri | Developer |
-| Link / unlink akun Jira | Developer (sendiri); Lead/AM/Admin/PM sesuai permission |
+| Link / unlink akun Jira | Developer (sendiri); Lead/AM/Admin/PM sesuai permission. Link **memverifikasi email ke Jira API** dan menyimpan `accountId`. Wajib: Integrations → Jira enabled + Test sukses. |
 
 #### Leave
 
@@ -253,10 +253,17 @@ Protokol **1-in / 1-out**: story points dan hours masuk ≈ keluar (toleransi ke
 Kartu konfigurasi:
 
 - Email / SMTP (notifikasi)
-- Jira
+- **Jira** — test live ke `/myself` + project; dipakai verifikasi email personil
 - ServiceNow
 
 Admin dapat menguji koneksi dan menyimpan config; secret disembunyikan untuk non-admin.
+
+**Alur verify Jira personil**
+
+1. Admin isi Integrations → Jira (base URL, email service account, API token, project key) → **Test** sampai SUCCESS.
+2. Di Personnel, isi / link email Jira developer.
+3. Portal memanggil Jira user search; jika ketemu, status **Verified** + `accountId` tersimpan.
+4. Tanpa config Jira (atau test gagal), link ditolak dengan pesan error yang jelas.
 
 ---
 

@@ -12,13 +12,16 @@ import {
   parseSkillTags,
   unlinkJiraAccountSchema,
   updatePersonnelSchema,
+  testPersonnelJiraSchema,
   type CreatePersonnelInput,
   type DeactivatePersonnelInput,
   type LinkJiraAccountInput,
+  type TestPersonnelJiraInput,
   type UnlinkJiraAccountInput,
   type UpdatePersonnelInput,
 } from "@/lib/validations/personnel";
 import { toNumber } from "@/lib/utils";
+import { verifyJiraUserByEmail } from "@/lib/jira/client";
 import { fail, ok, type ActionResult } from "@/types/actions";
 
 export interface PersonnelItem {
@@ -232,9 +235,13 @@ export async function createPersonnel(
     }
 
     const jiraEmail = parsed.data.jiraAccountEmail ?? null;
+    let jiraAccountId: string | null = null;
     if (jiraEmail) {
       const taken = await assertJiraEmailAvailable(jiraEmail);
       if (taken) return fail(taken);
+      const verified = await verifyJiraUserByEmail(jiraEmail);
+      if (!verified.ok) return fail(verified.error);
+      jiraAccountId = verified.user.accountId;
     }
 
     const passwordHash = await hash(
@@ -262,6 +269,7 @@ export async function createPersonnel(
           jobTitle: parsed.data.jobTitle,
           skillTags: parseSkillTags(parsed.data.skillTags),
           jiraAccountEmail: jiraEmail,
+          jiraAccountId,
           jiraLinkedAt: jiraEmail ? new Date() : null,
           startDate: parsed.data.startDate ?? new Date(),
           notes: parsed.data.notes,
@@ -316,6 +324,26 @@ export async function updatePersonnel(
     }
 
     const jiraChanged = (existing.jiraAccountEmail ?? null) !== jiraEmail;
+    let nextJiraAccountId: string | null | undefined = undefined;
+    let nextJiraLinkedAt: Date | null | undefined = undefined;
+
+    if (jiraChanged) {
+      if (jiraEmail) {
+        const verified = await verifyJiraUserByEmail(jiraEmail);
+        if (!verified.ok) return fail(verified.error);
+        nextJiraAccountId = verified.user.accountId;
+        nextJiraLinkedAt = new Date();
+      } else {
+        nextJiraAccountId = null;
+        nextJiraLinkedAt = null;
+      }
+    } else if (jiraEmail && !existing.jiraAccountId) {
+      // Re-verify previously stored email that never got an accountId.
+      const verified = await verifyJiraUserByEmail(jiraEmail);
+      if (!verified.ok) return fail(verified.error);
+      nextJiraAccountId = verified.user.accountId;
+      nextJiraLinkedAt = new Date();
+    }
 
     const updated = await prisma.$transaction(async (tx) => {
       await tx.user.update({
@@ -331,12 +359,12 @@ export async function updatePersonnel(
           standardCapacity: parsed.data.standardCapacity,
           skillTags: parseSkillTags(parsed.data.skillTags),
           jiraAccountEmail: jiraEmail,
-          jiraAccountId: jiraChanged ? null : undefined,
-          jiraLinkedAt: jiraChanged
-            ? jiraEmail
-              ? new Date()
-              : null
-            : undefined,
+          ...(nextJiraAccountId !== undefined
+            ? { jiraAccountId: nextJiraAccountId }
+            : {}),
+          ...(nextJiraLinkedAt !== undefined
+            ? { jiraLinkedAt: nextJiraLinkedAt }
+            : {}),
           startDate: parsed.data.startDate ?? null,
           endDate: parsed.data.endDate ?? null,
           notes: parsed.data.notes ?? null,
@@ -441,11 +469,14 @@ export async function linkJiraAccount(
     );
     if (taken) return fail(taken);
 
+    const verified = await verifyJiraUserByEmail(parsed.data.jiraAccountEmail);
+    if (!verified.ok) return fail(verified.error);
+
     const updated = await prisma.developer.update({
       where: { id: scope.developer.id },
       data: {
         jiraAccountEmail: parsed.data.jiraAccountEmail,
-        jiraAccountId: parsed.data.jiraAccountId || null,
+        jiraAccountId: verified.user.accountId,
         jiraLinkedAt: new Date(),
       },
       include: { user: { select: { name: true, email: true } } },
@@ -502,6 +533,84 @@ export async function unlinkJiraAccount(
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to unlink Jira account";
+    return fail(message);
+  }
+}
+
+export interface PersonnelJiraTestResult {
+  email: string;
+  accountId: string;
+  displayName: string;
+  active: boolean;
+  available: boolean;
+  message: string;
+}
+
+/**
+ * Live test: 1 developer ↔ 1 Jira account.
+ * Checks roster uniqueness + Atlassian user lookup (no DB write).
+ */
+export async function testPersonnelJiraConnection(
+  input: TestPersonnelJiraInput
+): Promise<ActionResult<PersonnelJiraTestResult>> {
+  try {
+    const session = await auth();
+    assertRole(session, [
+      "SYS_ADMIN",
+      "VENDOR_LEAD",
+      "VENDOR_AM",
+      "CLIENT_PM",
+      "DEVELOPER",
+    ]);
+
+    const perms = mergePerms(
+      session.user.role,
+      session.user.engagementMode,
+      personnelPerms
+    );
+    const parsed = testPersonnelJiraSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail(parsed.error.issues[0]?.message ?? "Invalid Jira email");
+    }
+
+    if (parsed.data.developerId) {
+      const scope = await assertPersonnelScope(
+        session,
+        parsed.data.developerId
+      );
+      if (!scope.ok) return fail(scope.error);
+      const isSelf = session.user.developerId === scope.developer.id;
+      if (!perms.canLinkJira && !(perms.canLinkOwnJira && isSelf)) {
+        return fail("Unauthorized to test Jira for this developer");
+      }
+    } else if (!perms.canLinkJira && !perms.canCreate) {
+      return fail("Unauthorized to test Jira connection");
+    }
+
+    const taken = await assertJiraEmailAvailable(
+      parsed.data.jiraAccountEmail,
+      parsed.data.developerId
+    );
+    if (taken) {
+      return fail(taken);
+    }
+
+    const verified = await verifyJiraUserByEmail(parsed.data.jiraAccountEmail);
+    if (!verified.ok) return fail(verified.error);
+
+    return ok({
+      email: parsed.data.jiraAccountEmail,
+      accountId: verified.user.accountId,
+      displayName: verified.user.displayName,
+      active: verified.user.active,
+      available: true,
+      message: `OK · ${verified.user.displayName} (${verified.user.accountId}) — free for this developer (1:1)`,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to test Jira connection";
     return fail(message);
   }
 }
