@@ -5,7 +5,7 @@ const globalForPrisma = globalThis as unknown as {
   prismaVersion?: string;
 };
 
-const PRISMA_CLIENT_VERSION = "development-v9-notifications-access";
+const PRISMA_CLIENT_VERSION = "development-v10-engagement-mode";
 
 function createPrismaClient(): PrismaClient {
   return new PrismaClient({

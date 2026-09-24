@@ -16,6 +16,13 @@ enum Role {
   DEVELOPER
 }
 
+/// MANAGED = SoD client PM vs vendor ops.
+/// BODY_SHOPPING = CLIENT_PM also acts as VENDOR_LEAD + VENDOR_AM.
+enum EngagementMode {
+  MANAGED
+  BODY_SHOPPING
+}
+
 enum OvertimeStatus {
   PENDING
   APPROVED_CLIENT
@@ -103,20 +110,21 @@ enum NotificationType {
 }
 
 model Client {
-  id          String       @id @default(cuid())
-  name        String
-  code        String       @unique
-  isActive    Boolean      @default(true)
-  notes       String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  users       User[]
-  developers  Developer[]
-  projects    Project[]
-  evaluations MonthlyEvaluation[]
-  scopeSwaps  ScopeSwap[]
-  replacements ReplacementTicket[]
-  coverages   CoverageAssignment[]
+  id              String         @id @default(cuid())
+  name            String
+  code            String         @unique
+  isActive        Boolean        @default(true)
+  engagementMode  EngagementMode @default(MANAGED)
+  notes           String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  users           User[]
+  developers      Developer[]
+  projects        Project[]
+  evaluations     MonthlyEvaluation[]
+  scopeSwaps      ScopeSwap[]
+  replacements    ReplacementTicket[]
+  coverages       CoverageAssignment[]
 }
 
 model User {

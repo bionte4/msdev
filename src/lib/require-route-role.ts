@@ -8,7 +8,13 @@ export async function requireRouteRole(path: string): Promise<void> {
   if (!session) {
     redirect("/login");
   }
-  if (!canAccessRoute(session.user.role, path)) {
+  if (
+    !canAccessRoute(
+      session.user.role,
+      path,
+      session.user.engagementMode
+    )
+  ) {
     redirect(homePathForRole(session.user.role));
   }
 }

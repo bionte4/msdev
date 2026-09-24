@@ -26,12 +26,20 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   createClient,
   deactivateClient,
   updateClient,
   type ClientItem,
   type ClientPermissions,
 } from "@/lib/actions/clients";
+import type { EngagementMode } from "@/lib/constants";
 
 export interface ClientCrudProps {
   items: ClientItem[];
@@ -44,10 +52,21 @@ interface FormState {
   code: string;
   notes: string;
   isActive: boolean;
+  engagementMode: EngagementMode;
 }
 
 function emptyForm(): FormState {
-  return { name: "", code: "", notes: "", isActive: true };
+  return {
+    name: "",
+    code: "",
+    notes: "",
+    isActive: true,
+    engagementMode: "MANAGED",
+  };
+}
+
+function modeLabel(mode: EngagementMode): string {
+  return mode === "BODY_SHOPPING" ? "Body shopping" : "Managed service";
 }
 
 export function ClientCrud({ items, permissions }: ClientCrudProps) {
@@ -72,6 +91,7 @@ export function ClientCrud({ items, permissions }: ClientCrudProps) {
       code: item.code,
       notes: item.notes ?? "",
       isActive: item.isActive,
+      engagementMode: item.engagementMode,
     });
     setOpen(true);
   }
@@ -86,6 +106,7 @@ export function ClientCrud({ items, permissions }: ClientCrudProps) {
           code: form.code.trim().toUpperCase(),
           notes: form.notes || null,
           isActive: form.isActive,
+          engagementMode: form.engagementMode,
         });
         if (!result.success) {
           toast.error(result.error);
@@ -98,6 +119,7 @@ export function ClientCrud({ items, permissions }: ClientCrudProps) {
           code: form.code.trim().toUpperCase(),
           notes: form.notes || null,
           isActive: form.isActive,
+          engagementMode: form.engagementMode,
         });
         if (!result.success) {
           toast.error(result.error);
@@ -125,31 +147,27 @@ export function ClientCrud({ items, permissions }: ClientCrudProps) {
     });
   }
 
-  const canShowForm =
-    open &&
-    ((form.id && permissions.canEdit) || (!form.id && permissions.canCreate));
+  const colSpan =
+    (permissions.canEdit || permissions.canDeactivate ? 1 : 0) + 5;
 
   return (
-    <div className="page-stack">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[12px] text-slate-500">
-          {items.length} client{items.length === 1 ? "" : "s"} · SYS_ADMIN manages
-        </p>
-        {permissions.canCreate && (
+    <div className="space-y-3">
+      {permissions.canCreate && (
+        <div className="flex justify-end">
           <Button size="sm" onClick={openCreate} disabled={isPending}>
             <Plus className="h-3.5 w-3.5" />
             Add client
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
-      {canShowForm && (
+      {open && (permissions.canCreate || permissions.canEdit) && (
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardHeader className="flex-row items-start justify-between space-y-0">
             <div>
               <CardTitle>{form.id ? "Edit client" : "Add client"}</CardTitle>
               <CardDescription>
-                Code is unique (e.g. ACME) · used by projects & personnel
+                Code is unique (e.g. ACME) · engagement mode controls PM dual-hat
               </CardDescription>
             </div>
             <Button
@@ -189,6 +207,30 @@ export function ClientCrud({ items, permissions }: ClientCrudProps) {
                     className="uppercase"
                     required
                   />
+                </div>
+                <div className="space-y-1 sm:col-span-2">
+                  <Label>Engagement mode</Label>
+                  <Select
+                    value={form.engagementMode}
+                    onValueChange={(v) =>
+                      setForm((p) => ({
+                        ...p,
+                        engagementMode: v as EngagementMode,
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="MANAGED">
+                        Managed service (SoD: PM ≠ vendor ops)
+                      </SelectItem>
+                      <SelectItem value="BODY_SHOPPING">
+                        Body shopping (PM dual-hat Lead + AM)
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-1 sm:col-span-2">
                   <Label htmlFor="client-notes">Notes</Label>
@@ -238,6 +280,7 @@ export function ClientCrud({ items, permissions }: ClientCrudProps) {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Code</TableHead>
+                <TableHead className="hidden sm:table-cell">Mode</TableHead>
                 <TableHead className="hidden md:table-cell">Usage</TableHead>
                 <TableHead>Status</TableHead>
                 {(permissions.canEdit || permissions.canDeactivate) && (
@@ -249,9 +292,7 @@ export function ClientCrud({ items, permissions }: ClientCrudProps) {
               {items.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={
-                      permissions.canEdit || permissions.canDeactivate ? 5 : 4
-                    }
+                    colSpan={colSpan}
                     className="text-[12px] text-slate-500"
                   >
                     No clients yet.
@@ -263,6 +304,17 @@ export function ClientCrud({ items, permissions }: ClientCrudProps) {
                     <TableCell className="font-medium">{item.name}</TableCell>
                     <TableCell>
                       <Badge variant="outline">{item.code}</Badge>
+                    </TableCell>
+                    <TableCell className="hidden sm:table-cell">
+                      <Badge
+                        variant={
+                          item.engagementMode === "BODY_SHOPPING"
+                            ? "secondary"
+                            : "outline"
+                        }
+                      >
+                        {modeLabel(item.engagementMode)}
+                      </Badge>
                     </TableCell>
                     <TableCell className="hidden tabular-nums text-[12px] text-slate-500 md:table-cell">
                       {item.projectCount} projects · {item.developerCount}{" "}

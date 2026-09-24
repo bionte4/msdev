@@ -7,16 +7,20 @@ import { ScopeSwapForm } from "@/components/features/scope-swaps/scope-swap-form
 import { ScopeSwapList } from "@/components/features/scope-swaps/scope-swap-list";
 import { PageHeader } from "@/components/layout/page-header";
 import { requireRouteRole } from "@/lib/require-route-role";
+import { hasEffectiveRole } from "@/lib/effective-roles";
 
 export const dynamic = "force-dynamic";
 
 export default async function ScopeSwapsPage() {
   await requireRouteRole("/scope-swaps");
   const session = await auth();
-  const canCreate =
-    session?.user.role === "CLIENT_PM" ||
-    session?.user.role === "VENDOR_LEAD" ||
-    session?.user.role === "SYS_ADMIN";
+  const canCreate = hasEffectiveRole(
+    session?.user.role,
+    session?.user.engagementMode,
+    "CLIENT_PM",
+    "VENDOR_LEAD",
+    "SYS_ADMIN"
+  );
 
   const [optionsResult, listResult] = await Promise.all([
     canCreate

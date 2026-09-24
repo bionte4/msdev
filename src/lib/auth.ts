@@ -2,7 +2,8 @@ import { NextAuthOptions, getServerSession } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
 import { prisma } from "@/lib/prisma";
-import type { Role } from "@/lib/constants";
+import type { EngagementMode, Role } from "@/lib/constants";
+import { getEffectiveRoles } from "@/lib/effective-roles";
 
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
@@ -23,7 +24,10 @@ export const authOptions: NextAuthOptions = {
 
         const user = await prisma.user.findUnique({
           where: { email: credentials.email },
-          include: { developer: true },
+          include: {
+            developer: true,
+            client: { select: { engagementMode: true } },
+          },
         });
 
         if (!user?.passwordHash) {
@@ -46,6 +50,8 @@ export const authOptions: NextAuthOptions = {
           role: user.role as Role,
           clientId: user.clientId,
           developerId: user.developer?.id ?? null,
+          engagementMode:
+            (user.client?.engagementMode as EngagementMode | undefined) ?? null,
         };
       },
     }),
@@ -57,6 +63,19 @@ export const authOptions: NextAuthOptions = {
         token.role = user.role;
         token.clientId = user.clientId;
         token.developerId = user.developerId;
+        token.engagementMode = user.engagementMode ?? null;
+      } else if (
+        token.role === "CLIENT_PM" &&
+        typeof token.clientId === "string" &&
+        token.clientId
+      ) {
+        // Keep body-shopping dual-hat in sync if admin changes client mode.
+        const client = await prisma.client.findUnique({
+          where: { id: token.clientId },
+          select: { engagementMode: true },
+        });
+        token.engagementMode =
+          (client?.engagementMode as EngagementMode | undefined) ?? "MANAGED";
       }
       return token;
     },
@@ -66,6 +85,7 @@ export const authOptions: NextAuthOptions = {
         session.user.role = token.role;
         session.user.clientId = token.clientId;
         session.user.developerId = token.developerId;
+        session.user.engagementMode = token.engagementMode ?? null;
       }
       return session;
     },
@@ -80,7 +100,14 @@ export function assertRole(
   session: Awaited<ReturnType<typeof auth>>,
   allowed: Role[]
 ): asserts session is NonNullable<Awaited<ReturnType<typeof auth>>> {
-  if (!session || !allowed.includes(session.user.role)) {
+  if (!session) {
+    throw new Error("Unauthorized access");
+  }
+  const effective = getEffectiveRoles(
+    session.user.role,
+    session.user.engagementMode
+  );
+  if (!effective.some((role) => allowed.includes(role))) {
     throw new Error("Unauthorized access");
   }
 }

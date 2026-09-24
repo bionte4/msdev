@@ -1,6 +1,6 @@
 import { DefaultSession, DefaultUser } from "next-auth";
 import { DefaultJWT } from "next-auth/jwt";
-import type { Role } from "@/lib/constants";
+import type { EngagementMode, Role } from "@/lib/constants";
 
 declare module "next-auth" {
   interface Session {
@@ -9,6 +9,7 @@ declare module "next-auth" {
       role: Role;
       clientId?: string | null;
       developerId?: string | null;
+      engagementMode?: EngagementMode | null;
     } & DefaultSession["user"];
   }
 
@@ -16,6 +17,7 @@ declare module "next-auth" {
     role: Role;
     clientId?: string | null;
     developerId?: string | null;
+    engagementMode?: EngagementMode | null;
   }
 }
 
@@ -25,5 +27,6 @@ declare module "next-auth/jwt" {
     role: Role;
     clientId?: string | null;
     developerId?: string | null;
+    engagementMode?: EngagementMode | null;
   }
 }

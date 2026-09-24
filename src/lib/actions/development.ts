@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { auth, assertRole } from "@/lib/auth";
+import { mergePerms } from "@/lib/effective-roles";
 import type { Role } from "@/lib/constants";
 import {
   assignDeveloperSkillSchema,
@@ -169,7 +170,7 @@ export async function getDevelopmentBoard(): Promise<
       "SYS_ADMIN",
     ]);
 
-    const p = perms(session.user.role);
+    const p = mergePerms(session.user.role, session.user.engagementMode, perms);
     const whereDev = developerWhere(session);
 
     const [
@@ -325,7 +326,7 @@ export async function upsertSkillCategory(
   try {
     const session = await auth();
     assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD"]);
-    if (!perms(session.user.role).canManageCatalog) {
+    if (!mergePerms(session.user.role, session.user.engagementMode, perms).canManageCatalog) {
       return fail("Unauthorized");
     }
 
@@ -363,7 +364,7 @@ export async function upsertSkillCatalog(
   try {
     const session = await auth();
     assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD"]);
-    if (!perms(session.user.role).canManageCatalog) {
+    if (!mergePerms(session.user.role, session.user.engagementMode, perms).canManageCatalog) {
       return fail("Unauthorized");
     }
 
@@ -412,7 +413,7 @@ export async function deleteSkillCatalog(
   try {
     const session = await auth();
     assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD"]);
-    if (!perms(session.user.role).canManageCatalog) {
+    if (!mergePerms(session.user.role, session.user.engagementMode, perms).canManageCatalog) {
       return fail("Unauthorized");
     }
 
@@ -454,7 +455,7 @@ export async function assignDeveloperSkill(
       "DEVELOPER",
     ]);
 
-    const p = perms(session.user.role);
+    const p = mergePerms(session.user.role, session.user.engagementMode, perms);
     const parsed = assignDeveloperSkillSchema.safeParse(input);
     if (!parsed.success) {
       return fail(parsed.error.issues[0]?.message ?? "Invalid skill assignment");
@@ -532,7 +533,7 @@ export async function upsertTraining(
   try {
     const session = await auth();
     assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD", "VENDOR_AM"]);
-    if (!perms(session.user.role).canManageTraining) {
+    if (!mergePerms(session.user.role, session.user.engagementMode, perms).canManageTraining) {
       return fail("Unauthorized");
     }
 
@@ -602,7 +603,7 @@ export async function upsertCoaching(
   try {
     const session = await auth();
     assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD", "VENDOR_AM"]);
-    if (!perms(session.user.role).canManageCoaching) {
+    if (!mergePerms(session.user.role, session.user.engagementMode, perms).canManageCoaching) {
       return fail("Unauthorized");
     }
 
@@ -670,7 +671,7 @@ export async function upsertPerformanceAction(
   try {
     const session = await auth();
     assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD", "CLIENT_PM"]);
-    if (!perms(session.user.role).canManagePerformance) {
+    if (!mergePerms(session.user.role, session.user.engagementMode, perms).canManagePerformance) {
       return fail("Unauthorized");
     }
 

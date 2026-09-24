@@ -29,6 +29,8 @@ export type Role =
   | "VENDOR_AM"
   | "DEVELOPER";
 
+export type EngagementMode = "MANAGED" | "BODY_SHOPPING";
+
 export const ALL_ROLES: Role[] = [
   "SYS_ADMIN",
   "CLIENT_PM",
@@ -36,3 +38,5 @@ export const ALL_ROLES: Role[] = [
   "VENDOR_AM",
   "DEVELOPER",
 ];
+
+export const ENGAGEMENT_MODES: EngagementMode[] = ["MANAGED", "BODY_SHOPPING"];

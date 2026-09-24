@@ -2,7 +2,8 @@
 
 import { prisma } from "@/lib/prisma";
 import { auth, assertRole } from "@/lib/auth";
-import type { Role } from "@/lib/constants";
+import { mergePerms } from "@/lib/effective-roles";
+import type { EngagementMode, Role } from "@/lib/constants";
 import {
   createClientSchema,
   deactivateClientSchema,
@@ -19,6 +20,7 @@ export interface ClientItem {
   code: string;
   notes: string | null;
   isActive: boolean;
+  engagementMode: EngagementMode;
   developerCount: number;
   projectCount: number;
   userCount: number;
@@ -48,6 +50,7 @@ function mapClient(
     code: string;
     notes: string | null;
     isActive: boolean;
+    engagementMode: EngagementMode;
     _count: { developers: number; projects: number; users: number };
   },
   perms: ClientPermissions
@@ -58,6 +61,7 @@ function mapClient(
     code: row.code,
     notes: row.notes,
     isActive: row.isActive,
+    engagementMode: row.engagementMode,
     developerCount: row._count.developers,
     projectCount: row._count.projects,
     userCount: row._count.users,
@@ -78,7 +82,11 @@ export async function listClients(): Promise<
       "VENDOR_AM",
     ]);
 
-    const perms = clientPerms(session.user.role);
+    const perms = mergePerms(
+      session.user.role,
+      session.user.engagementMode,
+      clientPerms
+    );
     const rows = await prisma.client.findMany({
       where:
         session.user.role === "SYS_ADMIN"
@@ -111,7 +119,11 @@ export async function createClient(
   try {
     const session = await auth();
     assertRole(session, ["SYS_ADMIN"]);
-    const perms = clientPerms(session.user.role);
+    const perms = mergePerms(
+      session.user.role,
+      session.user.engagementMode,
+      clientPerms
+    );
     if (!perms.canCreate) return fail("Unauthorized to create client");
 
     const parsed = createClientSchema.safeParse(input);
@@ -129,6 +141,7 @@ export async function createClient(
         code,
         notes: parsed.data.notes || null,
         isActive: parsed.data.isActive ?? true,
+        engagementMode: parsed.data.engagementMode ?? "MANAGED",
       },
       include: {
         _count: {
@@ -151,7 +164,11 @@ export async function updateClient(
   try {
     const session = await auth();
     assertRole(session, ["SYS_ADMIN"]);
-    const perms = clientPerms(session.user.role);
+    const perms = mergePerms(
+      session.user.role,
+      session.user.engagementMode,
+      clientPerms
+    );
     if (!perms.canEdit) return fail("Unauthorized to edit client");
 
     const parsed = updateClientSchema.safeParse(input);
@@ -177,6 +194,7 @@ export async function updateClient(
         code,
         notes: parsed.data.notes || null,
         isActive: parsed.data.isActive,
+        engagementMode: parsed.data.engagementMode,
       },
       include: {
         _count: {
@@ -199,7 +217,11 @@ export async function deactivateClient(
   try {
     const session = await auth();
     assertRole(session, ["SYS_ADMIN"]);
-    const perms = clientPerms(session.user.role);
+    const perms = mergePerms(
+      session.user.role,
+      session.user.engagementMode,
+      clientPerms
+    );
     if (!perms.canDeactivate) return fail("Unauthorized to deactivate client");
 
     const parsed = deactivateClientSchema.safeParse(input);

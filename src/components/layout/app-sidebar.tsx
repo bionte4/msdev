@@ -26,7 +26,8 @@ import {
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { ROUTE_ROLES } from "@/lib/rbac-routes";
+import { ROUTE_ROLES, canAccessRoute } from "@/lib/rbac-routes";
+import type { EngagementMode } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { NotificationBell } from "@/components/layout/notification-bell";
 
@@ -121,12 +122,14 @@ export interface AppSidebarProps {
   userName?: string | null;
   userEmail?: string | null;
   userRole?: string | null;
+  engagementMode?: EngagementMode | string | null;
 }
 
 export function AppSidebar({
   userName,
   userEmail,
   userRole,
+  engagementMode,
 }: AppSidebarProps) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -190,7 +193,7 @@ export function AppSidebar({
 
         <nav className="flex-1 space-y-0.5 overflow-y-auto p-2">
           {NAV_ITEMS.filter((item) =>
-            userRole ? (item.roles as readonly string[]).includes(userRole) : false
+            canAccessRoute(userRole, item.href, engagementMode)
           ).map((item) => {
             const active = pathname.startsWith(item.href);
             return (
@@ -219,6 +222,9 @@ export function AppSidebar({
             </p>
             <p className="truncate text-[10px] font-medium uppercase tracking-wide text-slate-500">
               {userRole ?? "Unauthenticated"}
+              {userRole === "CLIENT_PM" && engagementMode === "BODY_SHOPPING"
+                ? " · body shopping"
+                : ""}
             </p>
             {userEmail && (
               <p className="mt-0.5 truncate text-[11px] text-slate-400">

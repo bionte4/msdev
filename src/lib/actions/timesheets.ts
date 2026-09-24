@@ -3,6 +3,7 @@
 import type { Session } from "next-auth";
 import { prisma } from "@/lib/prisma";
 import { auth, assertRole } from "@/lib/auth";
+import { mergePerms } from "@/lib/effective-roles";
 import type { Role } from "@/lib/constants";
 import {
   MAX_DAILY_HOURS,
@@ -302,7 +303,7 @@ export async function listTimesheets(
       return fail(parsed.error.issues[0]?.message ?? "Invalid list query");
     }
 
-    const perms = permissionsFor(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, permissionsFor);
     const hasCustomPeriod = Boolean(parsed.data.from || parsed.data.to);
     let periodFrom: Date;
     let periodTo: Date;
@@ -393,7 +394,7 @@ export async function createTimesheet(
     const session = await auth();
     assertRole(session, ["DEVELOPER", "VENDOR_LEAD", "SYS_ADMIN"]);
 
-    const perms = permissionsFor(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, permissionsFor);
     if (!perms.canCreate) {
       return fail("Unauthorized to create timesheets");
     }
@@ -465,7 +466,7 @@ export async function updateTimesheet(
     const session = await auth();
     assertRole(session, ["DEVELOPER", "VENDOR_LEAD", "SYS_ADMIN"]);
 
-    const perms = permissionsFor(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, permissionsFor);
     const parsed = updateTimesheetSchema.safeParse(input);
     if (!parsed.success) {
       return fail(parsed.error.issues[0]?.message ?? "Invalid timesheet data");
@@ -552,7 +553,7 @@ export async function deleteTimesheet(
     const session = await auth();
     assertRole(session, ["DEVELOPER", "VENDOR_LEAD", "SYS_ADMIN"]);
 
-    const perms = permissionsFor(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, permissionsFor);
     const parsed = deleteTimesheetSchema.safeParse(input);
     if (!parsed.success) {
       return fail(parsed.error.issues[0]?.message ?? "Invalid delete request");
@@ -648,7 +649,7 @@ export async function downloadTimesheetImportTemplate(): Promise<
   try {
     const session = await auth();
     assertRole(session, ["DEVELOPER", "VENDOR_LEAD", "SYS_ADMIN"]);
-    const perms = permissionsFor(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, permissionsFor);
     if (!perms.canImport) return fail("Unauthorized to download import template");
 
     const sampleEmail =
@@ -729,7 +730,7 @@ export async function bulkImportTimesheetsFromExcel(input: {
   try {
     const session = await auth();
     assertRole(session, ["DEVELOPER", "VENDOR_LEAD", "SYS_ADMIN"]);
-    const perms = permissionsFor(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, permissionsFor);
     if (!perms.canImport) return fail("Unauthorized to import timesheets");
 
     if (!input.base64 || input.base64.length < 16) {
@@ -799,7 +800,7 @@ export async function bulkImportTimesheets(
   try {
     const session = await auth();
     assertRole(session, ["DEVELOPER", "VENDOR_LEAD", "SYS_ADMIN"]);
-    const perms = permissionsFor(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, permissionsFor);
     if (!perms.canImport) return fail("Unauthorized to import timesheets");
 
     const parsed = bulkImportTimesheetsSchema.safeParse(input);

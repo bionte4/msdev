@@ -1,4 +1,5 @@
-import type { Role } from "@/lib/constants";
+import type { EngagementMode, Role } from "@/lib/constants";
+import { getEffectiveRoles, hasEffectiveRole } from "@/lib/effective-roles";
 
 /** Default landing path after login / unauthorized page hit. */
 export function homePathForRole(role: Role | string | null | undefined): string {
@@ -83,10 +84,15 @@ export const ROUTE_ROLES: Record<string, readonly Role[]> = {
 
 export function canAccessRoute(
   role: Role | string | null | undefined,
-  path: string
+  path: string,
+  engagementMode?: EngagementMode | string | null
 ): boolean {
   if (!role) return false;
   const allowed = ROUTE_ROLES[path];
   if (!allowed) return true;
-  return (allowed as readonly string[]).includes(role);
+  return getEffectiveRoles(role, engagementMode).some((r) =>
+    (allowed as readonly string[]).includes(r)
+  );
 }
+
+export { getEffectiveRoles, hasEffectiveRole };

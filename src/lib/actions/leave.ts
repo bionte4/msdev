@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { auth, assertRole } from "@/lib/auth";
+import { mergePerms, hasEffectiveRole } from "@/lib/effective-roles";
 import type { Role } from "@/lib/constants";
 import {
   cancelLeaveRequestSchema,
@@ -117,7 +118,8 @@ function mapLeave(
   },
   sessionRole: Role,
   sessionDeveloperId: string | null | undefined,
-  sessionClientId: string | null | undefined
+  sessionClientId: string | null | undefined,
+  engagementMode?: string | null
 ): LeaveRequestItem {
   const isOwn = row.developerId === sessionDeveloperId;
   const sameClient =
@@ -128,16 +130,24 @@ function mapLeave(
   const canReview =
     sameClient &&
     row.status === "PENDING" &&
-    (sessionRole === "CLIENT_PM" ||
-      sessionRole === "VENDOR_LEAD" ||
-      sessionRole === "SYS_ADMIN");
+    hasEffectiveRole(
+      sessionRole,
+      engagementMode,
+      "CLIENT_PM",
+      "VENDOR_LEAD",
+      "SYS_ADMIN"
+    );
 
   const canEdit =
     row.status === "PENDING" &&
     sameClient &&
     (isOwn ||
-      sessionRole === "SYS_ADMIN" ||
-      sessionRole === "VENDOR_LEAD");
+      hasEffectiveRole(
+        sessionRole,
+        engagementMode,
+        "SYS_ADMIN",
+        "VENDOR_LEAD"
+      ));
 
   const canCancel = canEdit;
 
@@ -163,7 +173,7 @@ async function resolveDeveloperId(
   session: NonNullable<Awaited<ReturnType<typeof auth>>>,
   requested?: string
 ): Promise<{ ok: true; developerId: string } | { ok: false; error: string }> {
-  const perms = leavePerms(session.user.role);
+  const perms = mergePerms(session.user.role, session.user.engagementMode, leavePerms);
 
   if (requested) {
     if (!perms.canSelectDeveloper && requested !== session.user.developerId) {
@@ -211,7 +221,7 @@ export async function listLeaveRequests(): Promise<
       "SYS_ADMIN",
     ]);
 
-    const perms = leavePerms(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, leavePerms);
 
     const rows = await prisma.leaveRequest.findMany({
       where: {
@@ -232,12 +242,7 @@ export async function listLeaveRequests(): Promise<
 
     return ok({
       items: rows.map((r) =>
-        mapLeave(
-          r,
-          session.user.role,
-          session.user.developerId,
-          session.user.clientId
-        )
+        mapLeave(r, session.user.role, session.user.developerId, session.user.clientId, session.user.engagementMode)
       ),
       permissions: perms,
     });
@@ -255,7 +260,7 @@ export async function createLeaveRequest(
     const session = await auth();
     assertRole(session, ["DEVELOPER", "VENDOR_LEAD", "SYS_ADMIN"]);
 
-    const perms = leavePerms(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, leavePerms);
     if (!perms.canCreate) return fail("Unauthorized to create leave request");
 
     const parsed = createLeaveRequestSchema.safeParse(input);
@@ -310,12 +315,7 @@ export async function createLeaveRequest(
     });
 
     return ok(
-      mapLeave(
-        created,
-        session.user.role,
-        session.user.developerId,
-        session.user.clientId
-      )
+      mapLeave(created, session.user.role, session.user.developerId, session.user.clientId, session.user.engagementMode)
     );
   } catch (error) {
     const message =
@@ -347,12 +347,7 @@ export async function updateLeaveRequest(
 
     if (!existing) return fail("Leave request not found");
 
-    const current = mapLeave(
-      existing,
-      session.user.role,
-      session.user.developerId,
-      session.user.clientId
-    );
+    const current = mapLeave(existing, session.user.role, session.user.developerId, session.user.clientId, session.user.engagementMode);
     if (!current.canEdit) {
       return fail("Unauthorized to edit this leave request");
     }
@@ -377,12 +372,7 @@ export async function updateLeaveRequest(
     });
 
     return ok(
-      mapLeave(
-        updated,
-        session.user.role,
-        session.user.developerId,
-        session.user.clientId
-      )
+      mapLeave(updated, session.user.role, session.user.developerId, session.user.clientId, session.user.engagementMode)
     );
   } catch (error) {
     const message =
@@ -423,12 +413,7 @@ export async function reviewLeaveRequest(
 
     if (!existing) return fail("Leave request not found");
 
-    const current = mapLeave(
-      existing,
-      session.user.role,
-      session.user.developerId,
-      session.user.clientId
-    );
+    const current = mapLeave(existing, session.user.role, session.user.developerId, session.user.clientId, session.user.engagementMode);
     if (!current.canReview) {
       return fail("Unauthorized to review this leave request");
     }
@@ -461,12 +446,7 @@ export async function reviewLeaveRequest(
     });
 
     return ok(
-      mapLeave(
-        updated,
-        session.user.role,
-        session.user.developerId,
-        session.user.clientId
-      )
+      mapLeave(updated, session.user.role, session.user.developerId, session.user.clientId, session.user.engagementMode)
     );
   } catch (error) {
     const message =
@@ -500,12 +480,7 @@ export async function cancelLeaveRequest(
 
     if (!existing) return fail("Leave request not found");
 
-    const current = mapLeave(
-      existing,
-      session.user.role,
-      session.user.developerId,
-      session.user.clientId
-    );
+    const current = mapLeave(existing, session.user.role, session.user.developerId, session.user.clientId, session.user.engagementMode);
     if (!current.canCancel) {
       return fail("Unauthorized to cancel this leave request");
     }
@@ -529,12 +504,7 @@ export async function cancelLeaveRequest(
     });
 
     return ok(
-      mapLeave(
-        updated,
-        session.user.role,
-        session.user.developerId,
-        session.user.clientId
-      )
+      mapLeave(updated, session.user.role, session.user.developerId, session.user.clientId, session.user.engagementMode)
     );
   } catch (error) {
     const message =

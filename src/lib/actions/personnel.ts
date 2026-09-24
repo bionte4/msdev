@@ -3,6 +3,7 @@
 import { hash } from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { auth, assertRole } from "@/lib/auth";
+import { mergePerms } from "@/lib/effective-roles";
 import type { Role } from "@/lib/constants";
 import {
   createPersonnelSchema,
@@ -172,7 +173,7 @@ export async function listPersonnel(): Promise<
       "DEVELOPER",
     ]);
 
-    const perms = personnelPerms(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, personnelPerms);
 
     const rows = await prisma.developer.findMany({
       where: {
@@ -206,7 +207,7 @@ export async function createPersonnel(
     const session = await auth();
     assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD", "VENDOR_AM"]);
 
-    const perms = personnelPerms(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, personnelPerms);
     if (!perms.canCreate) return fail("Unauthorized to add personnel");
 
     const parsed = createPersonnelSchema.safeParse(input);
@@ -287,7 +288,7 @@ export async function updatePersonnel(
     const session = await auth();
     assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD", "VENDOR_AM"]);
 
-    const perms = personnelPerms(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, personnelPerms);
     if (!perms.canEdit) return fail("Unauthorized to edit personnel");
 
     const parsed = updatePersonnelSchema.safeParse(input);
@@ -362,7 +363,7 @@ export async function deactivatePersonnel(
     const session = await auth();
     assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD", "VENDOR_AM"]);
 
-    const perms = personnelPerms(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, personnelPerms);
     if (!perms.canDeactivate) {
       return fail("Unauthorized to deactivate personnel");
     }
@@ -420,7 +421,7 @@ export async function linkJiraAccount(
       "DEVELOPER",
     ]);
 
-    const perms = personnelPerms(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, personnelPerms);
     const parsed = linkJiraAccountSchema.safeParse(input);
     if (!parsed.success) {
       return fail(parsed.error.issues[0]?.message ?? "Invalid Jira link");
@@ -473,7 +474,7 @@ export async function unlinkJiraAccount(
       "DEVELOPER",
     ]);
 
-    const perms = personnelPerms(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, personnelPerms);
     const parsed = unlinkJiraAccountSchema.safeParse(input);
     if (!parsed.success) return fail("Invalid unlink request");
 

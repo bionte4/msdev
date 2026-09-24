@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { auth, assertRole } from "@/lib/auth";
+import { mergePerms } from "@/lib/effective-roles";
 import type { Role } from "@/lib/constants";
 import {
   cancelCoverageSchema,
@@ -208,7 +209,7 @@ export async function listCoverages(): Promise<
       "DEVELOPER",
     ]);
 
-    const perms = coveragePerms(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, coveragePerms);
     const clientFilter =
       session.user.role === "SYS_ADMIN"
         ? {}
@@ -297,7 +298,7 @@ export async function createCoverage(
       "VENDOR_LEAD",
       "VENDOR_AM",
     ]);
-    const perms = coveragePerms(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, coveragePerms);
     if (!perms.canCreate) return fail("Unauthorized to create coverage");
 
     const parsed = createCoverageSchema.safeParse(input);
@@ -350,7 +351,7 @@ export async function updateCoverage(
       "VENDOR_LEAD",
       "VENDOR_AM",
     ]);
-    const perms = coveragePerms(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, coveragePerms);
     if (!perms.canEdit) return fail("Unauthorized to edit coverage");
 
     const parsed = updateCoverageSchema.safeParse(input);
@@ -419,7 +420,7 @@ export async function cancelCoverage(
       "VENDOR_LEAD",
       "VENDOR_AM",
     ]);
-    const perms = coveragePerms(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, coveragePerms);
     if (!perms.canCancel) return fail("Unauthorized to cancel coverage");
 
     const parsed = cancelCoverageSchema.safeParse(input);

@@ -8,31 +8,36 @@ import { TimesheetCrud } from "@/components/features/timesheets/timesheet-crud";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { requireRouteRole } from "@/lib/require-route-role";
+import { hasEffectiveRole } from "@/lib/effective-roles";
 
 export const dynamic = "force-dynamic";
 
-function roleHint(role: string | undefined): string {
-  switch (role) {
-    case "DEVELOPER":
-      return "CRUD own entries only";
-    case "VENDOR_LEAD":
-    case "SYS_ADMIN":
-      return "CRUD team entries · can assign developer";
-    case "CLIENT_PM":
-    case "VENDOR_AM":
-      return "Read-only team view";
-    default:
-      return "Role-based access";
+function roleHint(
+  role: string | undefined,
+  engagementMode: string | null | undefined
+): string {
+  if (role === "DEVELOPER") return "CRUD own entries only";
+  if (
+    hasEffectiveRole(role, engagementMode, "VENDOR_LEAD", "SYS_ADMIN")
+  ) {
+    return "CRUD team entries · can assign developer";
   }
+  if (role === "CLIENT_PM" || role === "VENDOR_AM") {
+    return "Read-only team view";
+  }
+  return "Role-based access";
 }
 
 export default async function TimesheetsPage() {
   await requireRouteRole("/timesheets");
   const session = await auth();
-  const canMutate =
-    session?.user.role === "DEVELOPER" ||
-    session?.user.role === "VENDOR_LEAD" ||
-    session?.user.role === "SYS_ADMIN";
+  const canMutate = hasEffectiveRole(
+    session?.user.role,
+    session?.user.engagementMode,
+    "DEVELOPER",
+    "VENDOR_LEAD",
+    "SYS_ADMIN"
+  );
 
   const [listResult, projectsResult, developersResult] = await Promise.all([
     listTimesheets({}),
@@ -50,7 +55,9 @@ export default async function TimesheetsPage() {
         title="Timesheets"
         description="Daily max 16h · Weekly warning 45h · Hard cap 50h"
         actions={
-          <Badge variant="secondary">{roleHint(session?.user.role)}</Badge>
+          <Badge variant="secondary">
+            {roleHint(session?.user.role, session?.user.engagementMode)}
+          </Badge>
         }
       />
 

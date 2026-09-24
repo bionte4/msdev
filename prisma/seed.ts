@@ -8,23 +8,33 @@ async function main() {
 
   const client = await prisma.client.upsert({
     where: { code: "ACME" },
-    update: { isActive: true, name: "Acme Corp" },
+    update: {
+      isActive: true,
+      name: "Acme Corp",
+      engagementMode: "BODY_SHOPPING",
+    },
     create: {
       name: "Acme Corp",
       code: "ACME",
       isActive: true,
-      notes: "Primary governance demo client",
+      engagementMode: "BODY_SHOPPING",
+      notes: "Primary demo client · body shopping (PM dual-hat)",
     },
   });
 
   await prisma.client.upsert({
     where: { code: "NOVA" },
-    update: { isActive: true, name: "Nova Labs" },
+    update: {
+      isActive: true,
+      name: "Nova Labs",
+      engagementMode: "MANAGED",
+    },
     create: {
       name: "Nova Labs",
       code: "NOVA",
       isActive: true,
-      notes: "Secondary client for multi-tenant demos",
+      engagementMode: "MANAGED",
+      notes: "Secondary client · managed service (SoD)",
     },
   });
 

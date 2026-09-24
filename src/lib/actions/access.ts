@@ -3,6 +3,7 @@
 import { hash } from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { auth, assertRole } from "@/lib/auth";
+import { mergePerms, hasEffectiveRole } from "@/lib/effective-roles";
 import type { Role } from "@/lib/constants";
 import { ALL_ROLES } from "@/lib/constants";
 import {
@@ -89,6 +90,7 @@ function mapUser(
 
 function validateRoleAssignment(
   actorRole: Role,
+  engagementMode: string | null | undefined,
   targetRole: Role,
   clientId: string | null | undefined
 ): string | null {
@@ -98,10 +100,14 @@ function validateRoleAssignment(
   if (targetRole === "SYS_ADMIN" && clientId) {
     return "SYS_ADMIN should not be tied to a client";
   }
-  if (actorRole === "VENDOR_LEAD") {
+  // Vendor Lead and body-shopping Client PM (effective Lead) share this limit.
+  if (
+    actorRole !== "SYS_ADMIN" &&
+    hasEffectiveRole(actorRole, engagementMode, "VENDOR_LEAD")
+  ) {
     const allowed: Role[] = ["VENDOR_AM", "DEVELOPER", "VENDOR_LEAD"];
     if (!allowed.includes(targetRole)) {
-      return "Vendor Lead can only manage VENDOR_LEAD / VENDOR_AM / DEVELOPER";
+      return "Can only manage VENDOR_LEAD / VENDOR_AM / DEVELOPER for this client";
     }
   }
   return null;
@@ -118,7 +124,7 @@ export async function listAccessUsers(): Promise<
   try {
     const session = await auth();
     assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD"]);
-    const perms = accessPerms(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, accessPerms);
 
     const where =
       session.user.role === "SYS_ADMIN"
@@ -181,7 +187,7 @@ export async function createAccessUser(
   try {
     const session = await auth();
     assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD"]);
-    const perms = accessPerms(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, accessPerms);
     if (!perms.canCreate) return fail("Unauthorized to create users");
 
     const parsed = createAccessUserSchema.safeParse(input);
@@ -197,7 +203,12 @@ export async function createAccessUser(
           : parsed.data.clientId || null
         : session.user.clientId;
 
-    const roleError = validateRoleAssignment(session.user.role, role, clientId);
+    const roleError = validateRoleAssignment(
+      session.user.role,
+      session.user.engagementMode,
+      role,
+      clientId
+    );
     if (roleError) return fail(roleError);
 
     if (!perms.canAssignAnyRole && role === "SYS_ADMIN") {
@@ -252,7 +263,7 @@ export async function updateAccessUser(
   try {
     const session = await auth();
     assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD"]);
-    const perms = accessPerms(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, accessPerms);
     if (!perms.canEdit) return fail("Unauthorized to edit users");
 
     const parsed = updateAccessUserSchema.safeParse(input);
@@ -281,7 +292,12 @@ export async function updateAccessUser(
           : parsed.data.clientId || null
         : session.user.clientId;
 
-    const roleError = validateRoleAssignment(session.user.role, role, clientId);
+    const roleError = validateRoleAssignment(
+      session.user.role,
+      session.user.engagementMode,
+      role,
+      clientId
+    );
     if (roleError) return fail(roleError);
 
     if (
@@ -339,7 +355,7 @@ export async function setAccessUserActive(
   try {
     const session = await auth();
     assertRole(session, ["SYS_ADMIN", "VENDOR_LEAD"]);
-    const perms = accessPerms(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, accessPerms);
     if (!perms.canDeactivate) return fail("Unauthorized");
 
     const parsed = setAccessUserActiveSchema.safeParse(input);

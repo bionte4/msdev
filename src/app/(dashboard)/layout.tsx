@@ -22,6 +22,7 @@ export default async function DashboardLayout({
         userName={session.user.name}
         userEmail={session.user.email}
         userRole={session.user.role}
+        engagementMode={session.user.engagementMode}
       />
       <main className="min-w-0 flex-1 overflow-auto">
         <div className="mx-auto max-w-7xl px-3 py-4 sm:px-5 lg:px-6 lg:py-5">

@@ -41,10 +41,19 @@ Aplikasi dijalankan lokal: [http://localhost:3000](http://localhost:3000)
 | Role | Siapa | Fokus kerja |
 | --- | --- | --- |
 | **SYS_ADMIN** | Admin sistem | Semua client, konfigurasi, user access, integrasi |
-| **CLIENT_PM** | Project Manager sisi client | Evaluasi, approve OT, review cuti, project, scope swap |
+| **CLIENT_PM** | Project Manager sisi client | Evaluasi, approve OT, review cuti, project, scope swap. Jika client **BODY_SHOPPING**, merangkap capability Vendor Lead + AM |
 | **VENDOR_LEAD** | Lead vendor | Roster, timesheet team, coverage, development, access |
 | **VENDOR_AM** | Account Manager vendor | Operasional roster/coverage/training; banyak modul view-only |
 | **DEVELOPER** | Developer onsite/augmented | Data diri: timesheet, OT, cuti, skill, Jira link |
+
+**Engagement mode (per client, di menu Clients — Admin)**
+
+| Mode | Efek |
+| --- | --- |
+| **Managed service** | SoD ketat: PM client ≠ operasional vendor |
+| **Body shopping** | Akun `CLIENT_PM` mendapat menu & CRUD gabungan Lead + AM (personnel, timesheet team, coverage, user access, dll.) |
+
+Demo seed: **ACME = Body shopping** → login `pm@acme.example` sudah dual-hat.
 
 **Scope data**
 
@@ -72,6 +81,9 @@ Menampilkan utilisasi jam kerja developer per minggu (logged vs capacity standar
 **Siapa:** Admin (CRUD), PM / Lead / AM (lihat client sendiri)
 
 - **SYS_ADMIN** menambah / mengedit / menonaktifkan organisasi client.
+- Field **Engagement mode**:
+  - *Managed service* — segregasi PM vs vendor.
+  - *Body shopping* — PM client merangkap Lead + AM.
 - Role lain hanya melihat tenant yang relevan.
 
 ### 3.3 Projects (`/projects`)

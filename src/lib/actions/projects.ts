@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { auth, assertRole } from "@/lib/auth";
+import { mergePerms } from "@/lib/effective-roles";
 import type { Role } from "@/lib/constants";
 import {
   createProjectSchema,
@@ -118,7 +119,7 @@ export async function listProjects(): Promise<
       "DEVELOPER",
     ]);
 
-    const perms = projectPerms(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, projectPerms);
 
     const [rows, clients] = await Promise.all([
       prisma.project.findMany({
@@ -161,7 +162,7 @@ export async function createProject(
     const session = await auth();
     assertRole(session, ["SYS_ADMIN", "CLIENT_PM", "VENDOR_LEAD"]);
 
-    const perms = projectPerms(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, projectPerms);
     if (!perms.canCreate) return fail("Unauthorized to create project");
 
     const parsed = createProjectSchema.safeParse(input);
@@ -217,7 +218,7 @@ export async function updateProject(
     const session = await auth();
     assertRole(session, ["SYS_ADMIN", "CLIENT_PM", "VENDOR_LEAD"]);
 
-    const perms = projectPerms(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, projectPerms);
     if (!perms.canEdit) return fail("Unauthorized to edit project");
 
     const parsed = updateProjectSchema.safeParse(input);
@@ -268,7 +269,7 @@ export async function deactivateProject(
     const session = await auth();
     assertRole(session, ["SYS_ADMIN", "CLIENT_PM", "VENDOR_LEAD"]);
 
-    const perms = projectPerms(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, projectPerms);
     if (!perms.canDeactivate) return fail("Unauthorized to deactivate project");
 
     const parsed = deactivateProjectSchema.safeParse(input);

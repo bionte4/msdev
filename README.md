@@ -61,14 +61,23 @@ Server Actions enforce `assertRole` and tenant/`developerId` scope.
 | Role | Scope | Typical mutate rights |
 | --- | --- | --- |
 | **SYS_ADMIN** | All clients | Full admin |
-| **CLIENT_PM** | Own `clientId` | Projects, evaluations, OT review, leave review, scope swaps; timesheets read-only |
+| **CLIENT_PM** | Own `clientId` | Projects, evaluations, OT review, leave review, scope swaps; timesheets read-only **unless** client is `BODY_SHOPPING` |
 | **VENDOR_LEAD** | Own `clientId` | Personnel, coverage, development, timesheets, leave, scope swaps, user access |
 | **VENDOR_AM** | Own `clientId` | Personnel, coverage, training/coaching/skills; timesheets & OT read-only; evaluations/scope swaps view-only |
 | **DEVELOPER** | Own `developerId` | Own timesheets, OT, leave, skills, Jira link; coverage/projects/reports self-scoped |
 
-Post-login home: DEVELOPER → `/timesheets`; other roles → `/capacity`.
+### Engagement mode (per client)
 
-Unauthorized routes redirect to the role home path via `requireRouteRole`.
+| Mode | Meaning |
+| --- | --- |
+| **MANAGED** | Classic SoD: Client PM ≠ vendor ops (Lead/AM) |
+| **BODY_SHOPPING** | `CLIENT_PM` also receives **VENDOR_LEAD + VENDOR_AM** capabilities (dual-hat) |
+
+Set on **Clients** (SYS_ADMIN). Demo seed: **ACME = BODY_SHOPPING**, **NOVA = MANAGED**.
+
+Effective roles are computed in `src/lib/effective-roles.ts` and applied to `assertRole`, sidebar, and permission flags.
+
+Post-login home: DEVELOPER → `/timesheets`; other roles → `/capacity`.
 
 ## Local setup
 

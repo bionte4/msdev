@@ -3,6 +3,7 @@
 import * as XLSX from "xlsx";
 import { prisma } from "@/lib/prisma";
 import { auth, assertRole } from "@/lib/auth";
+import { mergePerms } from "@/lib/effective-roles";
 import type { Role } from "@/lib/constants";
 import {
   REPORT_TYPE_LABELS,
@@ -377,7 +378,7 @@ export async function getReport(
       "DEVELOPER",
     ]);
 
-    const perms = reportPerms(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, reportPerms);
     if (!perms.canView) return fail("Unauthorized");
 
     const parsed = reportQuerySchema.safeParse(input);
@@ -417,7 +418,7 @@ export async function exportReportExcel(
       "DEVELOPER",
     ]);
 
-    const perms = reportPerms(session.user.role);
+    const perms = mergePerms(session.user.role, session.user.engagementMode, reportPerms);
     if (!perms.canExport) return fail("Unauthorized to export");
 
     const parsed = reportQuerySchema.safeParse(input);
