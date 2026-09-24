@@ -68,6 +68,29 @@ export async function createNotification(
   }
 }
 
+export async function notifyUsers(
+  userIds: string[],
+  payload: {
+    title: string;
+    body: string;
+    href?: string | null;
+    type?: CreateNotificationInput["type"];
+  }
+): Promise<void> {
+  const unique = Array.from(new Set(userIds.filter(Boolean)));
+  if (unique.length === 0) return;
+
+  await prisma.notification.createMany({
+    data: unique.map((userId) => ({
+      userId,
+      title: payload.title,
+      body: payload.body,
+      href: payload.href || null,
+      type: payload.type ?? "INFO",
+    })),
+  });
+}
+
 export async function listMyNotifications(): Promise<
   ActionResult<{ items: NotificationItem[]; unreadCount: number }>
 > {

@@ -16,6 +16,7 @@ import {
 } from "@/lib/validations/leave";
 import { toNumber } from "@/lib/utils";
 import { fail, ok, type ActionResult } from "@/types/actions";
+import { notifyUsers } from "@/lib/actions/notifications";
 
 export interface LeaveRequestItem {
   id: string;
@@ -53,6 +54,51 @@ function leavePerms(role: Role): LeavePermissions {
     canSelectDeveloper:
       role === "VENDOR_LEAD" || role === "SYS_ADMIN",
   };
+}
+
+function isoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function leaveTypeLabel(type: string): string {
+  switch (type) {
+    case "ANNUAL_LEAVE":
+      return "Annual leave";
+    case "SICK":
+      return "Sick leave";
+    case "UNPAID":
+      return "Unpaid leave";
+    default:
+      return "Leave";
+  }
+}
+
+async function notifyLeaveReviewers(params: {
+  clientId: string;
+  excludeUserId?: string | null;
+  title: string;
+  body: string;
+  type?: "INFO" | "SUCCESS" | "WARNING" | "ALERT";
+}) {
+  const reviewers = await prisma.user.findMany({
+    where: {
+      isActive: true,
+      role: { in: ["CLIENT_PM", "VENDOR_LEAD", "SYS_ADMIN"] },
+      OR: [{ role: "SYS_ADMIN" }, { clientId: params.clientId }],
+      ...(params.excludeUserId ? { NOT: { id: params.excludeUserId } } : {}),
+    },
+    select: { id: true },
+  });
+
+  await notifyUsers(
+    reviewers.map((u) => u.id),
+    {
+      title: params.title,
+      body: params.body,
+      href: "/personnel",
+      type: params.type ?? "WARNING",
+    }
+  );
 }
 
 function mapLeave(
@@ -249,8 +295,18 @@ export async function createLeaveRequest(
         status: "PENDING",
       },
       include: {
-        developer: { include: { user: { select: { name: true } } } },
+        developer: {
+          include: { user: { select: { id: true, name: true } } },
+        },
       },
+    });
+
+    await notifyLeaveReviewers({
+      clientId: created.developer.clientId,
+      excludeUserId: session.user.id,
+      title: `New ${leaveTypeLabel(created.leaveType)} request`,
+      body: `${created.developer.user.name} requested ${leaveTypeLabel(created.leaveType).toLowerCase()} ${isoDate(startDate)} → ${isoDate(endDate)} (${toNumber(created.totalDays)} day(s)).`,
+      type: created.leaveType === "SICK" ? "ALERT" : "WARNING",
     });
 
     return ok(
@@ -359,7 +415,9 @@ export async function reviewLeaveRequest(
     const existing = await prisma.leaveRequest.findUnique({
       where: { id: parsed.data.id },
       include: {
-        developer: { include: { user: { select: { name: true } } } },
+        developer: {
+          include: { user: { select: { id: true, name: true } } },
+        },
       },
     });
 
@@ -384,8 +442,22 @@ export async function reviewLeaveRequest(
         reviewedById: session.user.id,
       },
       include: {
-        developer: { include: { user: { select: { name: true } } } },
+        developer: {
+          include: { user: { select: { id: true, name: true } } },
+        },
       },
+    });
+
+    const approved = parsed.data.decision === "APPROVED";
+    await notifyUsers([updated.developer.user.id], {
+      title: approved
+        ? `${leaveTypeLabel(updated.leaveType)} approved`
+        : `${leaveTypeLabel(updated.leaveType)} rejected`,
+      body: approved
+        ? `Your ${leaveTypeLabel(updated.leaveType).toLowerCase()} ${isoDate(updated.startDate)} → ${isoDate(updated.endDate)} was approved.`
+        : `Your ${leaveTypeLabel(updated.leaveType).toLowerCase()} was rejected${parsed.data.reviewNote ? `: ${parsed.data.reviewNote}` : "."}`,
+      href: "/personnel",
+      type: approved ? "SUCCESS" : "ALERT",
     });
 
     return ok(
@@ -420,7 +492,9 @@ export async function cancelLeaveRequest(
     const existing = await prisma.leaveRequest.findUnique({
       where: { id: parsed.data.id },
       include: {
-        developer: { include: { user: { select: { name: true } } } },
+        developer: {
+          include: { user: { select: { id: true, name: true } } },
+        },
       },
     });
 
@@ -440,8 +514,18 @@ export async function cancelLeaveRequest(
       where: { id: existing.id },
       data: { status: "CANCELLED" },
       include: {
-        developer: { include: { user: { select: { name: true } } } },
+        developer: {
+          include: { user: { select: { id: true, name: true } } },
+        },
       },
+    });
+
+    await notifyLeaveReviewers({
+      clientId: updated.developer.clientId,
+      excludeUserId: session.user.id,
+      title: `${leaveTypeLabel(updated.leaveType)} cancelled`,
+      body: `${updated.developer.user.name} cancelled ${leaveTypeLabel(updated.leaveType).toLowerCase()} ${isoDate(updated.startDate)} → ${isoDate(updated.endDate)}.`,
+      type: "INFO",
     });
 
     return ok(
