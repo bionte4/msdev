@@ -16,19 +16,20 @@ Aplikasi dijalankan lokal: [http://localhost:3000](http://localhost:3000)
 
 ### 1.2 Akun demo (seed)
 
-| Email | Role | Password |
-| --- | --- | --- |
-| `admin@acme.example` | SYS_ADMIN | `password123` |
-| `pm@acme.example` | CLIENT_PM | `password123` |
-| `lead@acme.example` | VENDOR_LEAD | `password123` |
-| `am@acme.example` | VENDOR_AM | `password123` |
-| `developer@acme.example` | DEVELOPER | `password123` |
-| `dev2@acme.example` | DEVELOPER | `password123` |
+| Email | Role | Password | Catatan |
+| --- | --- | --- | --- |
+| `admin@acme.example` | SYS_ADMIN | `password123` | Lintas client |
+| `pm@acme.example` | CLIENT_PM | `password123` | Member **ACME + NOVA**; ACME = body shopping |
+| `lead@acme.example` | VENDOR_LEAD | `password123` | ACME |
+| `am@acme.example` | VENDOR_AM | `password123` | ACME |
+| `developer@acme.example` | DEVELOPER | `password123` | OT diizinkan |
+| `dev2@acme.example` | DEVELOPER | `password123` | **Lump-sum** · OT diblokir |
 
 ### 1.3 Navigasi & notifikasi
 
 - **Sidebar kiri** menampilkan menu sesuai role (menu yang tidak diizinkan tidak muncul).
-- Membuka URL menu terlarang akan di-redirect ke home role Anda.
+- Membuka URL menu terlarang akan di-redirect ke **Dashboard**.
+- **Company switcher** (topbar) — jika akun punya lebih dari satu membership company, ganti company aktif di sini. Semua data CRUD mengikuti company yang dipilih.
 - **Loneng notifikasi** (header / mobile bar) menampilkan event penting (mis. pengajuan & review cuti). Klik item untuk membuka halaman terkait.
 - **Sign out** ada di bawah profil sidebar (dan ikon logout di mobile).
 
@@ -42,7 +43,7 @@ Aplikasi dijalankan lokal: [http://localhost:3000](http://localhost:3000)
 | **CLIENT_PM** | Project Manager sisi client | Evaluasi, approve OT, review cuti, project, scope swap. Jika client **BODY_SHOPPING**, merangkap capability Vendor Lead + AM |
 | **VENDOR_LEAD** | Lead vendor | Roster, timesheet team, coverage, development, access |
 | **VENDOR_AM** | Account Manager vendor | Operasional roster/coverage/training; banyak modul view-only |
-| **DEVELOPER** | Developer onsite/augmented | Data diri: timesheet, OT, cuti, skill, Jira link |
+| **DEVELOPER** | Developer onsite/augmented | Data diri: timesheet, OT (jika eligible), cuti, skill, Jira link, tiket |
 
 **Engagement mode (per client, di menu Clients — Admin)**
 
@@ -52,12 +53,18 @@ Aplikasi dijalankan lokal: [http://localhost:3000](http://localhost:3000)
 | **Body shopping** | Akun `CLIENT_PM` mendapat menu & CRUD gabungan Lead + AM (personnel, timesheet team, coverage, user access, dll.) |
 
 Demo seed: **ACME = Body shopping** → login `pm@acme.example` sudah dual-hat.
-Akun yang sama juga member **NOVA** (multi-company) — ganti company di switcher topbar.
+Akun yang sama juga member **NOVA** (multi-company) — ganti company di **switcher topbar**.
+
+**Multi-company**
+
+- Satu user (PM / Lead / AM) bisa punya banyak `ClientMembership`.
+- Company **aktif** = `session.clientId` (yang dipakai filter semua modul).
+- Admin menugaskan membership di **User access** (multi-select + primary).
 
 **Scope data**
 
 - Admin melihat lintas client.
-- CLIENT_PM / VENDOR_LEAD / VENDOR_AM terbatas pada **company aktif** (`session.clientId`), dipilih dari daftar membership.
+- CLIENT_PM / VENDOR_LEAD / VENDOR_AM terbatas pada **company aktif**.
 - DEVELOPER terbatas pada **diri sendiri** (`developerId`).
 
 Detail matrix menu ada di [README.md](./README.md#rbac).
@@ -186,11 +193,12 @@ Aturan keras:
 2. Tambah entri: tanggal, project, jam, deskripsi, flag OT bila relevan.
 3. Edit / hapus hanya entri milik sendiri.
 4. Bisa **download template** & **import Excel** (bulk).
+5. Jika personil **Allow overtime = Off**, checkbox OT disabled (jam > 8 tidak di-flag OT otomatis).
 
 **Vendor Lead / Admin**
 
 - CRUD untuk tim; bisa pilih developer saat create.
-- Import Excel untuk tim.
+- Import Excel untuk tim (baris OT ditolak jika developer tidak eligible).
 
 **Client PM / Vendor AM**
 
@@ -202,11 +210,13 @@ Alur: `PENDING` → `APPROVED_CLIENT` / `REJECTED_CLIENT`
 
 | Aksi | Siapa |
 | --- | --- |
-| Ajukan OT | Developer (profil developer wajib ter-link); Lead/Admin jika punya developer profile |
+| Ajukan OT | Developer (profil linked + **Allow overtime = On**); Lead/Admin jika punya developer profile eligible |
 | Approve / reject | Client PM, Admin |
 | Lihat daftar | Semua role dengan akses menu (scope sesuai role) |
 
-Setelah OT disetujui client, jam OT boleh dicatat selaras kebijakan timesheet.
+Jika **Allow overtime = Off**, form pengajuan disembunyikan dan server menolak create dengan pesan lump-sum.
+
+Setelah OT disetujui client, jam OT boleh dicatat selaras kebijakan timesheet (hanya jika tetap eligible).
 
 ### 3.9 Evaluations (`/evaluations`)
 
@@ -251,30 +261,39 @@ Protokol **1-in / 1-out**: story points dan hours masuk ≈ keluar (toleransi ke
 
 **Siapa:** Admin, Client PM, Vendor Lead, Vendor AM, Developer
 
-Pencatatan tiket operasional **harian** atau **bulk Excel** untuk report bulanan — mencakup kerja **dev dan non-dev** (Manage Apps, Manage Device, Support, Access, dll.).
+Pencatatan tiket operasional **harian** atau **bulk Excel** untuk report bulanan — mencakup kerja **dev dan non-dev**.
 
-1. **Add ticket** — pilih project, kategori, status sederhana (`OPEN` / `IN_PROGRESS` / `DONE` / `CANCELLED`).
-2. Dev: pilih **assignee** developer. Non-dev: isi **reporter name** (tanpa profil developer).
-3. **Bulk Excel** — unduh template, isi baris, upload (maks. 300 baris).
-4. **Sync Jira** opsional (Integrations Jira harus enabled + test OK) — saat create atau tombol sync per tiket.
-5. Kartu ringkasan bulanan di atas list; export lengkap juga di **Reports → Operational tickets**.
+**Kategori:** Development · Manage Apps · Manage Device · Support · Access · Other  
+
+**Status:** `OPEN` → `IN_PROGRESS` → `DONE` / `CANCELLED`
+
+1. **Add ticket** — pilih project, kategori, status, judul, deskripsi.
+2. Dev: pilih **assignee** developer. Non-dev: isi **reporter name** (+ email opsional) tanpa profil developer.
+3. **Bulk Excel** — unduh template, isi baris, upload (maks. **300** baris). Wajib `assigneeEmail` **atau** `reporterName`.
+4. **Sync Jira** opsional (Integrations → Jira enabled + Test SUCCESS) — centang saat create atau tombol sync per baris. Gagal sync: tiket tetap tersimpan di portal.
+5. Kartu ringkasan bulanan (by category / status / project) di atas list.
+6. Export detail: **Reports → Operational tickets**.
+
+Data mengikuti **company aktif** (multi-company switcher).
 
 ### 3.13 Reports (`/reports`)
 
 **Siapa:** semua role dengan menu
 
-- Pilih jenis laporan + rentang tanggal (termasuk **Operational tickets**).
-- **Export Excel (.xlsx)**.
+- Pilih jenis laporan + rentang tanggal (termasuk **Operational tickets** dan kolom OT eligible di personnel).
+- **Export Excel (.xlsx)** · Lead/PM/Admin bisa export-all.
 - Developer: data dibatasi ke diri sendiri.
-- Role lain: data client (Admin: lintas client sesuai filter).
+- Role lain: data company aktif (Admin: lintas client sesuai filter).
 
 ### 3.14 User access (`/access`)
 
 **Siapa:** SYS_ADMIN, VENDOR_LEAD
 
-- Buat / ubah user: role, client, aktif/nonaktif.
+- Buat / ubah user: role, aktif/nonaktif, password sementara.
+- **SYS_ADMIN** — untuk PM / Lead / AM: pilih **banyak company** + company primary.
+- Vendor Lead — hanya user di company aktif (role Lead / AM / Developer).
 - User nonaktif **tidak bisa login**.
-- Gunakan untuk offboarding atau koreksi role.
+- Setelah membership diubah, user perlu login ulang / switch company agar JWT sinkron.
 
 ### 3.15 Integrations (`/integrations`)
 
@@ -283,7 +302,7 @@ Pencatatan tiket operasional **harian** atau **bulk Excel** untuk report bulanan
 Kartu konfigurasi:
 
 - Email / SMTP (notifikasi)
-- **Jira** — test live ke `/myself` + project; dipakai verifikasi email personil
+- **Jira** — test live ke `/myself` + project; dipakai verifikasi email personil **dan** sync tiket operasional opsional
 - ServiceNow
 
 Admin dapat menguji koneksi dan menyimpan config; secret disembunyikan untuk non-admin.
@@ -301,16 +320,18 @@ Admin dapat menguji koneksi dan menyimpan config; secret disembunyikan untuk non
 
 ### 4.1 Onboarding developer baru
 
-1. **Vendor Lead / AM** buat personil di Personnel (akun + kapasitas + rate).
-2. Pastikan masuk **Project** yang benar (timesheet target).
+1. **Vendor Lead / AM** buat personil di Personnel (akun + kapasitas + rate + **Allow overtime**).
+2. Pastikan masuk **Project** yang benar (timesheet / ticket target).
 3. Developer login → link **Jira** di Personnel (profil sendiri).
 4. Developer isi skill di **Development**.
 
 ### 4.2 Kerja harian developer
 
-1. Isi **Timesheet** setiap hari (≤ 16h).
-2. Jika perlu lembur → ajukan **Overtime** dulu, tunggu approve PM.
-3. Jika cuti → ajukan **Leave** di Personnel; pantau notifikasi.
+1. Cek **Dashboard** untuk antrean (cuti/OT/jam cap).
+2. Isi **Timesheet** setiap hari (≤ 16h).
+3. Jika perlu lembur dan eligible → ajukan **Overtime** dulu, tunggu approve PM.
+4. Jika cuti → ajukan **Leave** di Personnel; pantau notifikasi.
+5. Catat tiket operasional di **Tickets** (dev / non-dev) bila project memakai tracking tiket.
 
 ### 4.3 Cuti + pengganti
 
@@ -325,11 +346,18 @@ Admin dapat menguji koneksi dan menyimpan config; secret disembunyikan untuk non
 3. Vendor Lead koordinasi penggantian dalam **10 hari kerja**.
 4. Bila perlu tukar scope tanpa ganti orang penuh → **Scope swap** (SP/hours setara).
 
-### 4.5 Governance mingguan
+### 4.5 Governance mingguan / bulanan
 
-1. **Capacity** — siapa over/under capacity.
-2. **Reports** — export untuk meeting.
-3. **Leaderboard** — pantau performa & reward.
+1. **Dashboard** & **Capacity** — siapa over/under capacity, antrean SLA.
+2. **Tickets** — ringkasan bulanan per kategori/project; sync Jira bila perlu.
+3. **Reports** — export (timesheet, leave, OT, evaluations, tickets, …) untuk meeting.
+4. **Leaderboard** — pantau performa & reward.
+
+### 4.6 Multi-company PM
+
+1. Login `pm@acme.example` → default ACME (body shopping).
+2. Ganti ke **NOVA** di company switcher topbar.
+3. Dashboard / Projects / Tickets menampilkan data NOVA saja sampai di-switch kembali.
 
 ---
 
@@ -338,14 +366,18 @@ Admin dapat menguji koneksi dan menyimpan config; secret disembunyikan untuk non
 | Gejala | Penyebab umum | Solusi |
 | --- | --- | --- |
 | Menu tidak muncul | Role tidak punya akses | Wajar — cek matrix RBAC / minta Lead ubah role di Access |
-| Redirect ke home | URL menu terlarang | Login dengan role yang benar |
+| Redirect ke Dashboard | URL menu terlarang | Login dengan role yang benar |
 | Tidak bisa submit OT | Akun tanpa profil developer | Link/buat Developer record di Personnel |
 | Tidak bisa submit OT | Personil **Allow overtime = Off** (lump-sum) | Lead/AM ubah toggle di Personnel |
+| Flag OT timesheet disabled | Personil tidak eligible | Sama — ubah Allow overtime, atau catat jam tanpa flag OT |
 | Timesheet ditolak | Melewati 16h/hari atau 50h/minggu | Kurangi jam / pecah ke hari lain |
 | Form evaluasi kosong (Lead/AM) | View-only | Hanya Client PM / Admin yang submit |
 | Form scope swap kosong (AM) | View-only | Minta PM atau Lead membuat swap |
-| Login gagal | User nonaktif / password salah | Cek Access admin; password demo `password123` |
-| Data “kosong” lintas client | Scope tenant | Admin lihat semua; role lain hanya client sendiri |
+| Login gagal | User nonaktif / password salah / DB down | Cek Access; password demo `password123`; `docker compose up -d` |
+| Data “kosong” setelah ganti company | Scope tenant aktif | Normal — switch kembali / pastikan membership di Access |
+| Tickets error `findMany` | Prisma client stale setelah schema change | Restart `npm run dev` (lihat `src/lib/prisma.ts`) |
+| Jira sync tiket gagal | Integrasi Jira off / token invalid | Integrations → Test Jira; tiket tetap tersimpan di portal |
+| Jira link personil gagal | Email tidak ketemu di Jira Cloud | Cek email & permission browse-users service account |
 
 ---
 
@@ -354,6 +386,7 @@ Admin dapat menguji koneksi dan menyimpan config; secret disembunyikan untuk non
 - Jangan bagikan password demo di lingkungan non-local.
 - Nonaktifkan user yang sudah offboard via **User access**.
 - Developer tidak bisa mengubah data developer lain (dicek di server action).
+- Non-admin tidak melihat API token Jira mentah di Integrations.
 
 ---
 
@@ -362,7 +395,10 @@ Admin dapat menguji koneksi dan menyimpan config; secret disembunyikan untuk non
 - Setup & stack: [README.md](./README.md)
 - Definisi route roles: `src/lib/rbac-routes.ts`
 - Page guard: `src/lib/require-route-role.ts`
+- Effective roles / body shopping: `src/lib/effective-roles.ts`
+- Multi-company membership: `src/lib/client-membership.ts`, `ClientMembership` di Prisma
+- Prisma singleton (dev): `src/lib/prisma.ts`
 
 ---
 
-*Dokumen ini mengikuti perilaku aplikasi saat rilis RBAC route guards. Jika menu atau permission berubah, sync ulang bagian matrix dengan README.*
+*Dokumen ini mengikuti perilaku aplikasi terkini (dashboard, multi-company, tickets, OT eligibility). Sync ulang matrix dengan README jika permission berubah.*
