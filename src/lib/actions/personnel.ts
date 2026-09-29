@@ -8,6 +8,7 @@ import type { Role } from "@/lib/constants";
 import {
   createPersonnelSchema,
   deactivatePersonnelSchema,
+  formatZodError,
   linkJiraAccountSchema,
   parseSkillTags,
   unlinkJiraAccountSchema,
@@ -218,7 +219,7 @@ export async function createPersonnel(
 
     const parsed = createPersonnelSchema.safeParse(input);
     if (!parsed.success) {
-      return fail(parsed.error.issues[0]?.message ?? "Invalid personnel data");
+      return fail(formatZodError(parsed.error, "Invalid personnel data"));
     }
 
     const clientId =
@@ -263,6 +264,14 @@ export async function createPersonnel(
         },
       });
 
+      await tx.clientMembership.create({
+        data: {
+          userId: user.id,
+          clientId,
+          isPrimary: true,
+        },
+      });
+
       return tx.developer.create({
         data: {
           userId: user.id,
@@ -275,7 +284,7 @@ export async function createPersonnel(
           jiraAccountId,
           jiraLinkedAt: jiraEmail ? new Date() : null,
           startDate: parsed.data.startDate ?? new Date(),
-          notes: parsed.data.notes,
+          notes: parsed.data.notes ?? null,
           isActive: true,
           overtimeEligible: parsed.data.overtimeEligible ?? true,
         },
@@ -305,7 +314,7 @@ export async function updatePersonnel(
 
     const parsed = updatePersonnelSchema.safeParse(input);
     if (!parsed.success) {
-      return fail(parsed.error.issues[0]?.message ?? "Invalid personnel data");
+      return fail(formatZodError(parsed.error, "Invalid personnel data"));
     }
 
     const existing = await prisma.developer.findUnique({
@@ -575,7 +584,7 @@ export async function testPersonnelJiraConnection(
     );
     const parsed = testPersonnelJiraSchema.safeParse(input);
     if (!parsed.success) {
-      return fail(parsed.error.issues[0]?.message ?? "Invalid Jira email");
+      return fail(formatZodError(parsed.error, "Invalid Jira email"));
     }
 
     if (parsed.data.developerId) {

@@ -156,7 +156,10 @@ export function IntegrationsBoard({
         provider: "JIRA",
         enabled,
         config: {
-          baseUrl: String(c.baseUrl ?? ""),
+          baseUrl: String(c.baseUrl ?? "")
+            .trim()
+            .replace(/\/+$/, "")
+            .replace(/\/jira$/i, ""),
           email: String(c.email ?? ""),
           apiToken: String(c.apiToken ?? ""),
           projectKey: String(c.projectKey ?? ""),
@@ -200,6 +203,24 @@ export function IntegrationsBoard({
   function handleTest(item: IntegrationCardData) {
     setPendingKey(`${item.provider}:test`);
     startTransition(async () => {
+      // Persist current form values first — Test reads from DB, not unsaved inputs.
+      const saved = await upsertIntegration(buildPayload(item));
+      if (!saved.success) {
+        setPendingKey(null);
+        toast.error(saved.error);
+        updateLocal(item.provider, {
+          lastTestStatus: "FAILED",
+          lastTestMessage: saved.error,
+          lastTestedAt: new Date().toISOString(),
+        });
+        return;
+      }
+      setItems((prev) =>
+        prev.map((row) =>
+          row.provider === saved.data.provider ? saved.data : row
+        )
+      );
+
       const result = await testIntegration(item.provider);
       setPendingKey(null);
       if (!result.success) {
@@ -261,6 +282,11 @@ export function IntegrationsBoard({
                       }
                     />
                   </div>
+                  {item.provider === "JIRA" && (
+                    <p className="max-w-[11rem] text-right text-[10px] leading-snug text-slate-400">
+                      Enabled = ticket sync only. Test/Link personil works with credentials saved.
+                    </p>
+                  )}
                 </div>
               </div>
             </CardHeader>
@@ -401,6 +427,7 @@ export function IntegrationsBoard({
                   <Field id={`${item.provider}-baseUrl`} label="Base URL">
                     <Input
                       id={`${item.provider}-baseUrl`}
+                      placeholder="https://your-org.atlassian.net"
                       value={String(item.config.baseUrl ?? "")}
                       disabled={!canEdit}
                       onChange={(e) =>
@@ -437,6 +464,8 @@ export function IntegrationsBoard({
                     <Input
                       id={`${item.provider}-apiToken`}
                       type="password"
+                      autoComplete="off"
+                      placeholder="Paste Atlassian API token"
                       value={String(item.config.apiToken ?? "")}
                       disabled={!canEdit}
                       onChange={(e) =>

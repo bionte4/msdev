@@ -156,6 +156,11 @@ export async function upsertIntegration(
     }
     if (parsed.data.provider === "JIRA" && isMaskedSecret(incoming.apiToken)) {
       incoming.apiToken = previous.apiToken ?? "";
+      if (!incoming.apiToken) {
+        return fail(
+          "Jira API token is required. Paste the Atlassian API token, then Save."
+        );
+      }
     }
     if (parsed.data.provider === "SERVICENOW") {
       if (isMaskedSecret(incoming.password)) {
@@ -163,6 +168,15 @@ export async function upsertIntegration(
       }
       if (isMaskedSecret(incoming.clientSecret)) {
         incoming.clientSecret = previous.clientSecret ?? "";
+      }
+    }
+
+    if (parsed.data.provider === "JIRA") {
+      const token = String(incoming.apiToken ?? "");
+      if (!token || token.includes("••••")) {
+        return fail(
+          "Jira API token is required. Paste the Atlassian API token, then Save."
+        );
       }
     }
 
@@ -220,10 +234,7 @@ export async function testIntegration(
       return fail("Integration not found. Save configuration first.");
     }
 
-    if (!row.enabled) {
-      return fail("Enable the integration before testing.");
-    }
-
+    // Testing credentials is allowed while Enabled is off (Enabled gates live sync only).
     const config = asConfigRecord(row.config);
     let status: "SUCCESS" | "FAILED" = "SUCCESS";
     let message = "Configuration looks valid (local dry-run).";
@@ -252,7 +263,8 @@ export async function testIntegration(
     if (provider === "JIRA") {
       if (!config.baseUrl || !config.email || !config.apiToken || !config.projectKey) {
         status = "FAILED";
-        message = "Jira URL, email, API token, and project key are required.";
+        message =
+          "Save configuration first: Jira base URL, account email, API token, and project key must be stored before Test.";
       } else {
         const live = await testJiraConnection();
         if (!live.ok) {

@@ -162,17 +162,17 @@ export function PersonnelCrud({ items, permissions }: PersonnelCrudProps) {
       if (form.id) {
         const result = await updatePersonnel({
           id: form.id,
-          name: form.name,
-          jobTitle: form.jobTitle,
+          name: form.name.trim(),
+          jobTitle: form.jobTitle.trim() || "Developer",
           hourlyRate: Number(form.hourlyRate),
           standardCapacity: Number(form.standardCapacity),
-          skillTags: form.skillTags,
-          jiraAccountEmail: form.jiraAccountEmail || null,
+          skillTags: form.skillTags ?? "",
+          jiraAccountEmail: form.jiraAccountEmail.trim() || null,
           startDate: form.startDate ? new Date(form.startDate) : null,
           endDate: form.endDate ? new Date(form.endDate) : null,
-          notes: form.notes || null,
+          notes: form.notes.trim() || null,
           isActive: form.isActive,
-          overtimeEligible: form.overtimeEligible,
+          overtimeEligible: form.overtimeEligible ?? true,
         });
         if (!result.success) {
           toast.error(result.error);
@@ -181,17 +181,17 @@ export function PersonnelCrud({ items, permissions }: PersonnelCrudProps) {
         toast.success("Personnel updated");
       } else {
         const result = await createPersonnel({
-          name: form.name,
-          email: form.email,
-          password: form.password || undefined,
-          jobTitle: form.jobTitle,
+          name: form.name.trim(),
+          email: form.email.trim(),
+          password: form.password.trim() || undefined,
+          jobTitle: form.jobTitle.trim() || "Developer",
           hourlyRate: Number(form.hourlyRate),
           standardCapacity: Number(form.standardCapacity),
-          skillTags: form.skillTags,
-          jiraAccountEmail: form.jiraAccountEmail || null,
+          skillTags: form.skillTags ?? "",
+          jiraAccountEmail: form.jiraAccountEmail.trim() || null,
           startDate: form.startDate ? new Date(form.startDate) : undefined,
-          notes: form.notes || undefined,
-          overtimeEligible: form.overtimeEligible,
+          notes: form.notes.trim() || undefined,
+          overtimeEligible: form.overtimeEligible ?? true,
         });
         if (!result.success) {
           toast.error(result.error);
@@ -264,10 +264,12 @@ export function PersonnelCrud({ items, permissions }: PersonnelCrudProps) {
   return (
     <div className="page-stack">
       <div className="rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-[12px] text-sky-900">
-        Jira live verify aktif · tiap developer 1 akun · cari tombol{" "}
+        Jira live verify · 1 developer = 1 akun. Gunakan{" "}
         <span className="font-semibold">Test Jira connection</span> /{" "}
-        <span className="font-semibold">Test connection</span> di form Edit,
-        panel Link, atau ikon plug di roster.
+        <span className="font-semibold">Link</span> di form Edit, panel Link,
+        atau ikon plug di roster. Kredensial service account di Integrations →
+        Jira; toggle <span className="font-semibold">Enabled</span> hanya untuk
+        sync tiket (tidak wajib untuk Test/Link personil).
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[12px] text-slate-500">
@@ -424,7 +426,8 @@ export function PersonnelCrud({ items, permissions }: PersonnelCrudProps) {
                   </Button>
                   <p className="text-[11px] text-sky-800/80">
                     Cek email ke Jira API + pastikan belum dipakai developer
-                    lain. Butuh Integrations → Jira aktif.
+                    lain. Butuh kredensial di Integrations → Jira (toggle Enabled
+                    tidak wajib untuk Test/Link personil).
                   </p>
                   {jiraTestHint && (
                     <p className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[11px] text-emerald-800">

@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { auth, assertRole } from "@/lib/auth";
 import { mergePerms } from "@/lib/effective-roles";
 import type { Role } from "@/lib/constants";
-import { createJiraIssue } from "@/lib/jira/client";
+import { createJiraIssue, searchJiraIssues } from "@/lib/jira/client";
 import {
   TICKET_CATEGORY_LABELS,
   TICKET_IMPORT_HEADERS,
@@ -13,12 +13,14 @@ import {
   bulkImportTicketsSchema,
   createTicketSchema,
   deleteTicketSchema,
+  importJiraTicketsSchema,
   listTicketsSchema,
   syncTicketToJiraSchema,
   updateTicketSchema,
   type BulkImportTicketsInput,
   type CreateTicketInput,
   type DeleteTicketInput,
+  type ImportJiraTicketsInput,
   type ListTicketsInput,
   type SyncTicketToJiraInput,
   type TicketStatus,
@@ -88,6 +90,16 @@ export interface TicketImportResult {
   failed: number;
   synced: number;
   errors: { row: number; message: string }[];
+}
+
+export interface JiraImportResult {
+  imported: number;
+  skipped: number;
+  unmatchedAssignee: number;
+  jiraProjectKey: string;
+  jql: string;
+  keys: string[];
+  errors: string[];
 }
 
 function ticketPerms(role: Role): TicketPermissions {
@@ -668,6 +680,231 @@ export async function syncTicketToJira(
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to sync ticket";
+    return fail(message);
+  }
+}
+
+function mapJiraStatusToPortal(
+  statusName: string,
+  statusCategory: string | null
+): TicketStatus {
+  const name = statusName.toLowerCase();
+  const cat = (statusCategory ?? "").toLowerCase();
+  if (
+    cat === "done" ||
+    name.includes("done") ||
+    name.includes("closed") ||
+    name.includes("resolved")
+  ) {
+    return "DONE";
+  }
+  if (
+    name.includes("cancel") ||
+    name.includes("won't") ||
+    name.includes("wont")
+  ) {
+    return "CANCELLED";
+  }
+  if (
+    cat === "indeterminate" ||
+    name.includes("progress") ||
+    name.includes("review") ||
+    name.includes("doing")
+  ) {
+    return "IN_PROGRESS";
+  }
+  return "OPEN";
+}
+
+function parseJiraDate(value: string | null): Date {
+  if (!value) return new Date();
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? new Date() : d;
+}
+
+/**
+ * Pull existing Jira issues into portal tickets (dedupe by jiraIssueKey).
+ * Assignee matched via Developer.jiraAccountId / jiraAccountEmail when linked.
+ */
+export async function importTicketsFromJira(
+  input: ImportJiraTicketsInput
+): Promise<ActionResult<JiraImportResult>> {
+  try {
+    const session = await auth();
+    assertRole(session, [
+      "SYS_ADMIN",
+      "CLIENT_PM",
+      "VENDOR_LEAD",
+      "VENDOR_AM",
+    ]);
+    const perms = mergePerms(
+      session.user.role,
+      session.user.engagementMode,
+      ticketPerms
+    );
+    if (!perms.canSyncJira) {
+      return fail("Unauthorized to import from Jira");
+    }
+
+    const parsed = importJiraTicketsSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail(parsed.error.issues[0]?.message ?? "Invalid import request");
+    }
+
+    const project = await assertProjectInScope(session, parsed.data.projectId);
+    const clientId = project.clientId;
+
+    const searched = await searchJiraIssues({
+      maxResults: parsed.data.maxResults,
+      jql: parsed.data.jql ?? undefined,
+    });
+    if (!searched.ok) return fail(searched.error);
+
+    if (searched.issues.length === 0) {
+      return ok({
+        imported: 0,
+        skipped: 0,
+        unmatchedAssignee: 0,
+        jiraProjectKey: searched.config.projectKey,
+        jql: searched.jql,
+        keys: [],
+        errors: ["No issues returned from Jira for this query"],
+      });
+    }
+
+    const keys = searched.issues.map((i) => i.key);
+    const existing = await prisma.operationalTicket.findMany({
+      where: {
+        clientId,
+        jiraIssueKey: { in: keys },
+      },
+      select: { jiraIssueKey: true },
+    });
+    const existingKeys = new Set(
+      existing.map((e) => e.jiraIssueKey).filter(Boolean) as string[]
+    );
+
+    const developers = await prisma.developer.findMany({
+      where: {
+        clientId,
+        isActive: true,
+        OR: [
+          { jiraAccountId: { not: null } },
+          { jiraAccountEmail: { not: null } },
+        ],
+      },
+      select: {
+        id: true,
+        jiraAccountId: true,
+        jiraAccountEmail: true,
+      },
+    });
+
+    const byAccountId = new Map(
+      developers
+        .filter((d) => d.jiraAccountId)
+        .map((d) => [d.jiraAccountId!, d.id])
+    );
+    const byEmail = new Map(
+      developers
+        .filter((d) => d.jiraAccountEmail)
+        .map((d) => [d.jiraAccountEmail!.toLowerCase(), d.id])
+    );
+
+    let imported = 0;
+    let skipped = 0;
+    let unmatchedAssignee = 0;
+    const importedKeys: string[] = [];
+    const errors: string[] = [];
+
+    for (const issue of searched.issues) {
+      if (existingKeys.has(issue.key)) {
+        skipped += 1;
+        continue;
+      }
+
+      let assigneeId: string | null = null;
+      if (issue.assigneeAccountId) {
+        assigneeId = byAccountId.get(issue.assigneeAccountId) ?? null;
+      }
+      if (!assigneeId && issue.assigneeEmail) {
+        assigneeId =
+          byEmail.get(issue.assigneeEmail.toLowerCase()) ?? null;
+      }
+
+      const reporterName = assigneeId
+        ? null
+        : issue.assigneeDisplayName ?? "Jira import";
+      const reporterEmail = assigneeId
+        ? null
+        : issue.assigneeEmail ?? null;
+
+      if (!assigneeId && issue.assigneeAccountId) {
+        unmatchedAssignee += 1;
+      }
+
+      const workDate = parseJiraDate(issue.createdAt ?? issue.updatedAt);
+      workDate.setHours(0, 0, 0, 0);
+
+      try {
+        await prisma.operationalTicket.create({
+          data: {
+            clientId,
+            projectId: project.id,
+            workDate,
+            category: parsed.data.category,
+            title: issue.summary.slice(0, 200),
+            description: issue.description,
+            status: mapJiraStatusToPortal(
+              issue.statusName,
+              issue.statusCategory
+            ),
+            assigneeId,
+            reporterName,
+            reporterEmail,
+            createdById: session.user.id,
+            syncToJira: true,
+            jiraIssueKey: issue.key,
+            jiraIssueId: issue.id,
+            syncStatus: "SYNCED",
+            syncMessage: `Imported from Jira (${searched.config.projectKey})`,
+            notes: [
+              `Jira ${issue.key}`,
+              issue.issueType ? `Type: ${issue.issueType}` : null,
+              issue.labels.length
+                ? `Labels: ${issue.labels.slice(0, 8).join(", ")}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" · "),
+          },
+        });
+        existingKeys.add(issue.key);
+        imported += 1;
+        importedKeys.push(issue.key);
+      } catch (error) {
+        errors.push(
+          `${issue.key}: ${
+            error instanceof Error ? error.message : "create failed"
+          }`
+        );
+      }
+    }
+
+    return ok({
+      imported,
+      skipped,
+      unmatchedAssignee,
+      jiraProjectKey: searched.config.projectKey,
+      jql: searched.jql,
+      keys: importedKeys,
+      errors,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to import tickets from Jira";
     return fail(message);
   }
 }

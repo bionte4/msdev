@@ -96,6 +96,13 @@ export const syncTicketToJiraSchema = z.object({
   id: z.string().min(1),
 });
 
+export const importJiraTicketsSchema = z.object({
+  projectId: z.string().min(1, "Portal project is required"),
+  maxResults: z.coerce.number().int().min(1).max(100).default(50),
+  category: z.enum(ticketWorkCategories).default("DEVELOPMENT"),
+  jql: z.string().max(500).optional().nullable(),
+});
+
 export const bulkImportTicketRowSchema = z.object({
   workDate: z.coerce.date({ message: "workDate required (YYYY-MM-DD)" }),
   projectCode: z
@@ -170,3 +177,4 @@ export type DeleteTicketInput = z.infer<typeof deleteTicketSchema>;
 export type ListTicketsInput = z.infer<typeof listTicketsSchema>;
 export type BulkImportTicketsInput = z.infer<typeof bulkImportTicketsSchema>;
 export type SyncTicketToJiraInput = z.infer<typeof syncTicketToJiraSchema>;
+export type ImportJiraTicketsInput = z.infer<typeof importJiraTicketsSchema>;

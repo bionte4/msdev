@@ -30,10 +30,10 @@ evaluations, coverage, development, scope swaps, and operational tickets.
 | `/evaluations` | Monthly scorecard + auto replacement ticket |
 | `/leaderboard` | Ranking by evaluation, rewards, or hours |
 | `/scope-swaps` | 1-in / 1-out scope swap |
-| `/tickets` | Operational tickets · daily + Excel bulk · monthly summary · optional Jira |
+| `/tickets` | Operational tickets · daily + Excel bulk · **Import from Jira** · push sync · monthly summary |
 | `/reports` | Operational reports · Excel export (incl. tickets) |
 | `/access` | User access · roles · **multi-company membership** |
-| `/integrations` | Email, SMTP, Jira, ServiceNow config |
+| `/integrations` | Email, SMTP, Jira (verify + ticket sync), ServiceNow |
 
 ## RBAC
 
@@ -140,7 +140,7 @@ After schema changes, prefer restarting `npm run dev` (Prisma client is version-
 ## Useful commands
 
 ```bash
-docker compose up -d      # start local Postgres on :5434
+docker compose up -d      # start local Postgres on :5435
 docker compose down       # stop Postgres
 npm run db:up             # alias for docker compose up -d
 npm run db:push           # sync schema
@@ -157,6 +157,6 @@ npm run build             # local production build check
 - Evaluation weights: Code 30% · Delivery 25% · Tech 20% · Comm 15% · Prof 10%
 - Score **< 2.80** → replacement ticket (SLA 10 working days)
 - Scope swap: equal story points + hours (1-in, 1-out)
-- Operational tickets: categories Development / Manage Apps / Manage Device / Support / Access / Other · status OPEN → IN_PROGRESS → DONE / CANCELLED · optional Jira sync
+- Operational tickets: categories Development / Manage Apps / Manage Device / Support / Access / Other · status OPEN → IN_PROGRESS → DONE / CANCELLED · **Import from Jira** (pull; credentials required, Enabled optional) · **push sync** portal → Jira when Enabled
 
 > Deploy (Vercel/Neon) ditunda — development dulu di local laptop.

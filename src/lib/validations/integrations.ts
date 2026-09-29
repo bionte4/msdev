@@ -35,21 +35,29 @@ export const smtpConfigSchema = z.object({
 
 export const jiraConfigSchema = z.object({
   baseUrl: z
-    .string()
+    .string({ error: "Jira base URL is required" })
+    .min(1, "Jira base URL is required")
     .url("Valid Jira base URL is required")
     .refine((v) => v.startsWith("https://") || v.startsWith("http://"), {
       message: "Jira URL must start with http(s)://",
     }),
-  email: z.string().email("Jira account email is required"),
-  apiToken: z.string().min(8, "API token is required"),
+  email: z
+    .string({ error: "Jira service-account email is required" })
+    .min(1, "Jira service-account email is required")
+    .email("Jira service-account email is required"),
+  apiToken: z
+    .string({ error: "Jira API token is required" })
+    .min(8, "Jira API token is required"),
   projectKey: z
-    .string()
+    .string({ error: "Jira project key is required" })
     .min(1, "Project key is required")
     .max(20)
     .regex(/^[A-Z][A-Z0-9]+$/, "Project key must be like PROJ"),
-  issueType: z.string().min(1).default("Task"),
+  issueType: z.preprocess(
+    (v) => (v === undefined || v === null || v === "" ? "Task" : v),
+    z.string().min(1)
+  ),
 });
-
 export const serviceNowConfigSchema = z.object({
   instanceUrl: z
     .string()
@@ -127,7 +135,7 @@ export const DEFAULT_INTEGRATION_CONFIGS: Record<
   JIRA: {
     displayName: "Jira",
     description:
-      "Create/sync replacement tickets and scope-swap issues in Jira.",
+      "Credentials for personnel verify (always) and ticket sync when Enabled.",
     config: {
       baseUrl: "https://your-org.atlassian.net",
       email: "",

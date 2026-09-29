@@ -21,7 +21,10 @@ export interface JiraConnectionFail {
 }
 
 function normalizeBaseUrl(url: string): string {
-  return url.replace(/\/+$/, "");
+  let cleaned = url.trim().replace(/\/+$/, "");
+  // Cloud UI often copies "...atlassian.net/jira" — REST API lives on the host root.
+  cleaned = cleaned.replace(/\/jira$/i, "");
+  return cleaned;
 }
 
 function basicAuthHeader(email: string, apiToken: string): string {
@@ -48,10 +51,18 @@ async function jiraFetch(
   });
 }
 
-export async function loadJiraConfig(): Promise<
+export async function loadJiraConfig(options?: {
+  /**
+   * When true, IntegrationConfig.enabled must be on (ticket sync / live features).
+   * When false, credentials alone are enough (personnel verify, Integrations test).
+   */
+  requireEnabled?: boolean;
+}): Promise<
   | { ok: true; config: JiraConfig; enabled: boolean }
   | { ok: false; error: string }
 > {
+  const requireEnabled = options?.requireEnabled ?? true;
+
   const row = await prisma.integrationConfig.findUnique({
     where: { provider: "JIRA" },
   });
@@ -59,13 +70,14 @@ export async function loadJiraConfig(): Promise<
     return {
       ok: false,
       error:
-        "Jira integration is not configured. Ask SYS_ADMIN to set Integrations → Jira.",
+        "Jira is not configured. Ask SYS_ADMIN to save credentials in Integrations → Jira.",
     };
   }
-  if (!row.enabled) {
+  if (requireEnabled && !row.enabled) {
     return {
       ok: false,
-      error: "Jira integration is disabled. Enable it in Integrations first.",
+      error:
+        "Jira sync is disabled. Enable Integrations → Jira to sync tickets (personnel verify still works once credentials are saved).",
     };
   }
 
@@ -76,11 +88,16 @@ export async function loadJiraConfig(): Promise<
 
   const parsed = jiraConfigSchema.safeParse(raw);
   if (!parsed.success) {
+    const missing = parsed.error.issues
+      .map((issue) => {
+        const field = issue.path.filter(Boolean).join(".") || "field";
+        return `${field}: ${issue.message}`;
+      })
+      .slice(0, 3)
+      .join("; ");
     return {
       ok: false,
-      error:
-        parsed.error.issues[0]?.message ??
-        "Jira config is incomplete (URL, email, API token, project key).",
+      error: `Jira credentials incomplete in Integrations → Jira. Save base URL, service-account email, API token, and project key first. (${missing})`,
     };
   }
 
@@ -91,13 +108,14 @@ export async function loadJiraConfig(): Promise<
     };
   }
 
-  return { ok: true, config: parsed.data, enabled: true };
+  return { ok: true, config: parsed.data, enabled: row.enabled };
 }
 
 export async function testJiraConnection(): Promise<
   JiraConnectionOk | JiraConnectionFail
 > {
-  const loaded = await loadJiraConfig();
+  // Allow testing credentials before the "enabled" toggle is turned on.
+  const loaded = await loadJiraConfig({ requireEnabled: false });
   if (!loaded.ok) return loaded;
 
   const { config } = loaded;
@@ -201,7 +219,7 @@ export async function verifyJiraUserByEmail(
 > {
   const skip = process.env.JIRA_SKIP_VERIFY === "true";
   if (skip) {
-    const loaded = await loadJiraConfig();
+    const loaded = await loadJiraConfig({ requireEnabled: false });
     if (!loaded.ok) {
       return {
         ok: true,
@@ -310,7 +328,7 @@ export async function createJiraIssue(input: {
   | { ok: true; key: string; id: string; config: JiraConfig }
   | { ok: false; error: string }
 > {
-  const loaded = await loadJiraConfig();
+  const loaded = await loadJiraConfig({ requireEnabled: true });
   if (!loaded.ok) return loaded;
 
   const { config } = loaded;
@@ -360,6 +378,143 @@ export async function createJiraIssue(input: {
         error instanceof Error
           ? `Jira create error: ${error.message}`
           : "Jira create error",
+    };
+  }
+}
+
+export interface JiraIssueImportRow {
+  id: string;
+  key: string;
+  summary: string;
+  description: string | null;
+  statusName: string;
+  statusCategory: string | null;
+  assigneeAccountId: string | null;
+  assigneeEmail: string | null;
+  assigneeDisplayName: string | null;
+  labels: string[];
+  issueType: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+function extractAdfText(node: unknown): string {
+  if (!node || typeof node !== "object") return "";
+  const n = node as { type?: string; text?: string; content?: unknown[] };
+  if (typeof n.text === "string") return n.text;
+  if (!Array.isArray(n.content)) return "";
+  return n.content.map(extractAdfText).join(n.type === "paragraph" ? "\n" : "");
+}
+
+/**
+ * Pull issues from the configured Jira project (read-only).
+ * Credentials required; Enabled toggle not required (Enabled gates outbound sync).
+ */
+export async function searchJiraIssues(input?: {
+  maxResults?: number;
+  jql?: string;
+}): Promise<
+  | { ok: true; issues: JiraIssueImportRow[]; config: JiraConfig; jql: string }
+  | { ok: false; error: string }
+> {
+  const loaded = await loadJiraConfig({ requireEnabled: false });
+  if (!loaded.ok) return loaded;
+
+  const { config } = loaded;
+  const maxResults = Math.min(Math.max(input?.maxResults ?? 50, 1), 100);
+  const jql =
+    input?.jql?.trim() ||
+    `project = ${config.projectKey} ORDER BY updated DESC`;
+
+  try {
+    const res = await jiraFetch(config, "/rest/api/3/search", {
+      method: "POST",
+      body: JSON.stringify({
+        jql,
+        maxResults,
+        fields: [
+          "summary",
+          "description",
+          "status",
+          "assignee",
+          "created",
+          "updated",
+          "issuetype",
+          "labels",
+        ],
+      }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      return {
+        ok: false,
+        error: `Jira search failed (${res.status}): ${body.slice(0, 220) || res.statusText}`,
+      };
+    }
+
+    const data = (await res.json()) as {
+      issues?: Array<{
+        id?: string;
+        key?: string;
+        fields?: {
+          summary?: string;
+          description?: unknown;
+          status?: {
+            name?: string;
+            statusCategory?: { key?: string; name?: string };
+          };
+          assignee?: {
+            accountId?: string;
+            emailAddress?: string;
+            displayName?: string;
+          } | null;
+          labels?: string[];
+          issuetype?: { name?: string };
+          created?: string;
+          updated?: string;
+        };
+      }>;
+    };
+
+    const issues: JiraIssueImportRow[] = (data.issues ?? [])
+      .filter((issue) => issue.id && issue.key)
+      .map((issue) => {
+        const fields = issue.fields ?? {};
+        const descriptionRaw = fields.description;
+        const description =
+          typeof descriptionRaw === "string"
+            ? descriptionRaw
+            : extractAdfText(descriptionRaw).trim() || null;
+
+        return {
+          id: issue.id!,
+          key: issue.key!,
+          summary: (fields.summary ?? issue.key!).slice(0, 200),
+          description: description ? description.slice(0, 4000) : null,
+          statusName: fields.status?.name ?? "Open",
+          statusCategory:
+            fields.status?.statusCategory?.key ??
+            fields.status?.statusCategory?.name ??
+            null,
+          assigneeAccountId: fields.assignee?.accountId ?? null,
+          assigneeEmail: fields.assignee?.emailAddress ?? null,
+          assigneeDisplayName: fields.assignee?.displayName ?? null,
+          labels: Array.isArray(fields.labels) ? fields.labels : [],
+          issueType: fields.issuetype?.name ?? null,
+          createdAt: fields.created ?? null,
+          updatedAt: fields.updated ?? null,
+        };
+      });
+
+    return { ok: true, issues, config, jql };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? `Jira search error: ${error.message}`
+          : "Jira search error",
     };
   }
 }

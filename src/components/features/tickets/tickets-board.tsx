@@ -4,6 +4,7 @@ import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
+  CloudDownload,
   Download,
   Loader2,
   Pencil,
@@ -46,6 +47,7 @@ import {
   createTicket,
   deleteTicket,
   downloadTicketImportTemplate,
+  importTicketsFromJira,
   syncTicketToJira,
   updateTicket,
   type TicketAssigneeOption,
@@ -147,6 +149,13 @@ export function TicketsBoard({
   const fileRef = useRef<HTMLInputElement>(null);
   const [isPending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
+  const [jiraImportOpen, setJiraImportOpen] = useState(false);
+  const [jiraImportProjectId, setJiraImportProjectId] = useState(
+    () => projects[0]?.id ?? ""
+  );
+  const [jiraImportMax, setJiraImportMax] = useState("50");
+  const [jiraImportCategory, setJiraImportCategory] =
+    useState<TicketWorkCategory>("DEVELOPMENT");
   const [form, setForm] = useState<FormState>(() =>
     emptyForm(projects, currentDeveloperId)
   );
@@ -285,6 +294,37 @@ export function TicketsBoard({
     reader.readAsDataURL(file);
   }
 
+  function handleImportFromJira() {
+    if (!jiraImportProjectId) {
+      toast.error("Select a portal project first");
+      return;
+    }
+    startTransition(async () => {
+      const result = await importTicketsFromJira({
+        projectId: jiraImportProjectId,
+        maxResults: Number(jiraImportMax) || 50,
+        category: jiraImportCategory,
+      });
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(
+        `Jira ${result.data.jiraProjectKey}: imported ${result.data.imported} · skipped ${result.data.skipped}`
+      );
+      if (result.data.unmatchedAssignee > 0) {
+        toast.message(
+          `${result.data.unmatchedAssignee} issue(s) without linked personnel Jira account — saved as reporter`
+        );
+      }
+      if (result.data.errors[0]) {
+        toast.message(result.data.errors[0]);
+      }
+      setJiraImportOpen(false);
+      refresh();
+    });
+  }
+
   const canShowForm =
     open &&
     ((form.id && permissions.canEdit) || (!form.id && permissions.canCreate));
@@ -293,10 +333,24 @@ export function TicketsBoard({
     <div className="page-stack">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[12px] text-slate-500">
-          Daily or bulk ticket logging · dev & non-dev work · optional Jira sync
+          Daily or bulk ticket logging · import from Jira · optional push sync
           · period {initialData.from} → {initialData.to}
         </p>
         <div className="flex flex-wrap gap-1.5">
+          {permissions.canSyncJira && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={isPending || projects.length === 0}
+              onClick={() => {
+                setJiraImportProjectId(projects[0]?.id ?? "");
+                setJiraImportOpen(true);
+              }}
+            >
+              <CloudDownload className="h-3.5 w-3.5" />
+              Import from Jira
+            </Button>
+          )}
           {permissions.canImport && (
             <>
               <Button
@@ -337,6 +391,97 @@ export function TicketsBoard({
           )}
         </div>
       </div>
+
+      {jiraImportOpen && permissions.canSyncJira && (
+        <Card className="border-sky-200 bg-sky-50/40">
+          <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 pb-2">
+            <div>
+              <CardTitle className="text-base">Import from Jira</CardTitle>
+              <CardDescription>
+                Pull recent issues from Integrations → Jira project into this
+                portal project. Skips keys already linked. Assignee matched via
+                Personnel Jira verify.
+              </CardDescription>
+            </div>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8"
+              onClick={() => setJiraImportOpen(false)}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-1 sm:col-span-1">
+              <Label>Portal project</Label>
+              <Select
+                value={jiraImportProjectId}
+                onValueChange={setJiraImportProjectId}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select project" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.code} · {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label>Default category</Label>
+              <Select
+                value={jiraImportCategory}
+                onValueChange={(v) =>
+                  setJiraImportCategory(v as TicketWorkCategory)
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ticketWorkCategories.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {TICKET_CATEGORY_LABELS[c]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label>Max issues</Label>
+              <Input
+                type="number"
+                min={1}
+                max={100}
+                value={jiraImportMax}
+                onChange={(e) => setJiraImportMax(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-wrap gap-2 sm:col-span-3">
+              <Button
+                size="sm"
+                disabled={isPending || !jiraImportProjectId}
+                onClick={handleImportFromJira}
+              >
+                {isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <CloudDownload className="h-3.5 w-3.5" />
+                )}
+                Pull from Jira
+              </Button>
+              <p className="self-center text-[11px] text-slate-500">
+                Uses saved Jira credentials (Enabled not required for pull).
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {summary && (
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
