@@ -5,7 +5,12 @@ import { prisma } from "@/lib/prisma";
 import { auth, assertRole } from "@/lib/auth";
 import { mergePerms } from "@/lib/effective-roles";
 import type { Role } from "@/lib/constants";
-import { createJiraIssue, searchJiraIssues } from "@/lib/jira/client";
+import {
+  createJiraIssue,
+  searchJiraIssues,
+  transitionJiraIssue,
+  updateJiraIssue,
+} from "@/lib/jira/client";
 import {
   TICKET_CATEGORY_LABELS,
   TICKET_IMPORT_HEADERS,
@@ -309,6 +314,68 @@ async function pushTicketToJira(ticket: {
   };
 }
 
+async function pushTicketUpdateToJira(ticket: {
+  id: string;
+  title: string;
+  description: string | null;
+  category: string;
+  status: string;
+  jiraIssueKey: string;
+  project: { code: string };
+  workDate: Date;
+}): Promise<{
+  syncStatus: "SYNCED" | "FAILED";
+  syncMessage: string | null;
+}> {
+  const summary = `[${ticket.project.code}] ${ticket.title}`;
+  const description = [
+    ticket.description ?? "",
+    "",
+    `Category: ${ticket.category}`,
+    `Status: ${ticket.status}`,
+    `Work date: ${isoDate(ticket.workDate)}`,
+    `Portal ticket: ${ticket.id}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const updated = await updateJiraIssue({
+    issueKey: ticket.jiraIssueKey,
+    summary,
+    description,
+    labels: ["governance-portal", ticket.category.toLowerCase()],
+  });
+
+  if (!updated.ok) {
+    return { syncStatus: "FAILED", syncMessage: updated.error };
+  }
+
+  const status = ticket.status as TicketStatus;
+  const transition = await transitionJiraIssue({
+    issueKey: ticket.jiraIssueKey,
+    portalStatus: status,
+  });
+
+  if (!transition.ok) {
+    return {
+      syncStatus: "SYNCED",
+      syncMessage: `Updated ${ticket.jiraIssueKey}; status not changed (${transition.error})`,
+    };
+  }
+
+  if (transition.transitioned) {
+    return {
+      syncStatus: "SYNCED",
+      syncMessage: `Updated ${ticket.jiraIssueKey} · status → ${transition.name}`,
+    };
+  }
+
+  return {
+    syncStatus: "SYNCED",
+    syncMessage: `Updated ${ticket.jiraIssueKey} (fields; no matching Jira transition for ${ticket.status})`,
+  };
+}
+
 export async function listTickets(
   input: ListTicketsInput = {}
 ): Promise<ActionResult<TicketListData>> {
@@ -534,6 +601,7 @@ export async function updateTicket(
 
     const existing = await prisma.operationalTicket.findUnique({
       where: { id: parsed.data.id },
+      include: { project: { select: { code: true } } },
     });
     if (!existing) return fail("Ticket not found");
 
@@ -561,7 +629,7 @@ export async function updateTicket(
     }
     await resolveAssignee(session, assigneeId);
 
-    const updated = await prisma.operationalTicket.update({
+    let updated = await prisma.operationalTicket.update({
       where: { id: existing.id },
       data: {
         clientId: project.clientId,
@@ -579,6 +647,33 @@ export async function updateTicket(
       },
       include: ticketInclude,
     });
+
+    const shouldPush =
+      Boolean(existing.jiraIssueKey) &&
+      (parsed.data.syncToJira || existing.syncToJira) &&
+      perms.canSyncJira;
+
+    if (shouldPush && existing.jiraIssueKey) {
+      const sync = await pushTicketUpdateToJira({
+        id: updated.id,
+        title: updated.title,
+        description: updated.description,
+        category: updated.category,
+        status: updated.status,
+        jiraIssueKey: existing.jiraIssueKey,
+        project: { code: updated.project.code },
+        workDate: updated.workDate,
+      });
+      updated = await prisma.operationalTicket.update({
+        where: { id: updated.id },
+        data: {
+          syncStatus: sync.syncStatus,
+          syncMessage: sync.syncMessage,
+          syncToJira: true,
+        },
+        include: ticketInclude,
+      });
+    }
 
     return ok(mapTicket(updated, perms));
   } catch (error) {
@@ -648,7 +743,9 @@ export async function syncTicketToJira(
 
     const existing = await prisma.operationalTicket.findUnique({
       where: { id: parsed.data.id },
-      include: { project: { select: { code: true } } },
+      include: {
+        project: { select: { code: true } },
+      },
     });
     if (!existing) return fail("Ticket not found");
     if (
@@ -658,8 +755,30 @@ export async function syncTicketToJira(
     ) {
       return fail("Unauthorized for this ticket");
     }
+
     if (existing.jiraIssueKey) {
-      return fail(`Already synced as ${existing.jiraIssueKey}`);
+      const sync = await pushTicketUpdateToJira({
+        id: existing.id,
+        title: existing.title,
+        description: existing.description,
+        category: existing.category,
+        status: existing.status,
+        jiraIssueKey: existing.jiraIssueKey,
+        project: existing.project,
+        workDate: existing.workDate,
+      });
+      const updated = await prisma.operationalTicket.update({
+        where: { id: existing.id },
+        data: {
+          ...sync,
+          syncToJira: true,
+        },
+        include: ticketInclude,
+      });
+      if (sync.syncStatus === "FAILED") {
+        return fail(sync.syncMessage ?? "Jira update failed");
+      }
+      return ok(mapTicket(updated, perms));
     }
 
     const sync = await pushTicketToJira(existing);

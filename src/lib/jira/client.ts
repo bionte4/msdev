@@ -382,6 +382,154 @@ export async function createJiraIssue(input: {
   }
 }
 
+function adfDescription(text: string) {
+  return {
+    type: "doc" as const,
+    version: 1 as const,
+    content: [
+      {
+        type: "paragraph" as const,
+        content: [{ type: "text" as const, text: text.slice(0, 8000) }],
+      },
+    ],
+  };
+}
+
+/**
+ * Push portal field changes to an existing Jira issue (summary + description + labels).
+ * Requires Integrations → Jira Enabled (write path).
+ */
+export async function updateJiraIssue(input: {
+  issueKey: string;
+  summary: string;
+  description?: string | null;
+  labels?: string[];
+}): Promise<{ ok: true; key: string; config: JiraConfig } | { ok: false; error: string }> {
+  const loaded = await loadJiraConfig({ requireEnabled: true });
+  if (!loaded.ok) return loaded;
+
+  const { config } = loaded;
+  const key = input.issueKey.trim();
+  if (!key) return { ok: false, error: "Jira issue key is required" };
+
+  const text = (input.description ?? "").trim() || input.summary;
+
+  try {
+    const res = await jiraFetch(
+      config,
+      `/rest/api/3/issue/${encodeURIComponent(key)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          fields: {
+            summary: input.summary.slice(0, 255),
+            description: adfDescription(text),
+            ...(input.labels ? { labels: input.labels.slice(0, 10) } : {}),
+          },
+        }),
+      }
+    );
+
+    if (!res.ok) {
+      const body = await res.text();
+      return {
+        ok: false,
+        error: `Jira update failed (${res.status}): ${body.slice(0, 220) || res.statusText}`,
+      };
+    }
+
+    return { ok: true, key, config };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? `Jira update error: ${error.message}`
+          : "Jira update error",
+    };
+  }
+}
+
+/**
+ * Best-effort status sync via Jira transitions (workflow names vary by project).
+ */
+export async function transitionJiraIssue(input: {
+  issueKey: string;
+  portalStatus: "OPEN" | "IN_PROGRESS" | "DONE" | "CANCELLED";
+}): Promise<{ ok: true; transitioned: boolean; name?: string } | { ok: false; error: string }> {
+  const loaded = await loadJiraConfig({ requireEnabled: true });
+  if (!loaded.ok) return loaded;
+
+  const { config } = loaded;
+  const key = input.issueKey.trim();
+
+  const preferred: Record<string, string[]> = {
+    OPEN: ["to do", "todo", "open", "backlog", "reopen", "to do"],
+    IN_PROGRESS: ["in progress", "start progress", "progress", "doing"],
+    DONE: ["done", "close", "closed", "resolve", "resolved", "complete", "completed"],
+    CANCELLED: ["cancel", "cancelled", "won't do", "wont do", "decline"],
+  };
+
+  try {
+    const listRes = await jiraFetch(
+      config,
+      `/rest/api/3/issue/${encodeURIComponent(key)}/transitions`
+    );
+    if (!listRes.ok) {
+      const body = await listRes.text();
+      return {
+        ok: false,
+        error: `Jira transitions failed (${listRes.status}): ${body.slice(0, 180)}`,
+      };
+    }
+
+    const data = (await listRes.json()) as {
+      transitions?: Array<{ id?: string; name?: string; to?: { name?: string } }>;
+    };
+    const transitions = data.transitions ?? [];
+    if (transitions.length === 0) {
+      return { ok: true, transitioned: false };
+    }
+
+    const targets = preferred[input.portalStatus] ?? [];
+    const match = transitions.find((t) => {
+      const name = `${t.name ?? ""} ${t.to?.name ?? ""}`.toLowerCase();
+      return targets.some((p) => name.includes(p));
+    });
+
+    if (!match?.id) {
+      return { ok: true, transitioned: false };
+    }
+
+    const doRes = await jiraFetch(
+      config,
+      `/rest/api/3/issue/${encodeURIComponent(key)}/transitions`,
+      {
+        method: "POST",
+        body: JSON.stringify({ transition: { id: match.id } }),
+      }
+    );
+
+    if (!doRes.ok) {
+      const body = await doRes.text();
+      return {
+        ok: false,
+        error: `Jira transition apply failed (${doRes.status}): ${body.slice(0, 180)}`,
+      };
+    }
+
+    return { ok: true, transitioned: true, name: match.name };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? `Jira transition error: ${error.message}`
+          : "Jira transition error",
+    };
+  }
+}
+
 export interface JiraIssueImportRow {
   id: string;
   key: string;

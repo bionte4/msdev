@@ -271,7 +271,7 @@ Pencatatan tiket operasional **harian** atau **bulk Excel** untuk report bulanan
 2. Dev: pilih **assignee** developer. Non-dev: isi **reporter name** (+ email opsional) tanpa profil developer.
 3. **Bulk Excel** — unduh template, isi baris, upload (maks. **300** baris). Wajib `assigneeEmail` **atau** `reporterName`.
 4. **Import from Jira** — tombol di Tickets (Admin/PM/Lead/AM). Pilih project portal + kategori default + max issues (1–100). Portal menarik issue dari project Jira di Integrations (kredensial wajib; **Enabled tidak wajib** untuk pull). Skip jika `jiraIssueKey` sudah ada. Assignee dicocokkan lewat Personnel **Verified** (`jiraAccountId` / email); kalau tidak ketemu, disimpan sebagai reporter.
-5. **Sync Jira** (push portal → Jira) opsional — centang saat create atau tombol sync per baris. Untuk **push** butuh Integrations → Jira **Enabled**. Gagal sync: tiket tetap tersimpan di portal.
+5. **Sync Jira** (push portal → Jira) — centang saat create, **auto-push saat edit** jika tiket sudah punya `jiraIssueKey`, atau ikon refresh di baris. Untuk **push/update** butuh Integrations → Jira **Enabled**. Field yang di-push: summary, description, labels; status dicoba via transition (best-effort, tergantung workflow Jira). Gagal sync: tiket tetap tersimpan di portal.
 6. Kartu ringkasan bulanan (by category / status / project) di atas list.
 7. Export detail: **Reports → Operational tickets**.
 
@@ -381,6 +381,7 @@ Admin dapat menguji koneksi dan menyimpan config; secret disembunyikan untuk non
 | Tickets error `findMany` | Prisma client stale setelah schema change | Restart `npm run dev` (lihat `src/lib/prisma.ts`) |
 | Jira Test / Save “credentials incomplete” | Config belum di-Save / API token kosong | Save dulu (Test sekarang auto-Save); paste API token Atlassian |
 | Jira push sync tiket gagal | Integrasi Jira **Enabled** off / token invalid | Nyalakan Enabled + Test Jira; tiket tetap tersimpan di portal |
+| Edit tiket portal tidak ubah Jira | Sebelumnya belum ada push-on-update; atau Enabled off / role tanpa sync | Pastikan Enabled on; Save edit (auto-push) atau ikon refresh; Admin/PM/Lead/AM |
 | Jira Import from Jira kosong / gagal | Kredensial belum valid / project Jira kosong | Integrations → Test; cek project key; coba max issues lebih besar |
 | Jira link personil gagal | Email tidak ketemu di Jira Cloud | Cek email & permission browse-users service account |
 | Client context required (Add personnel) | SYS_ADMIN tanpa company aktif | Pilih client di switcher pojok atas |

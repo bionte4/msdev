@@ -222,7 +222,9 @@ export function TicketsBoard({
       }
       toast.success(form.id ? "Ticket updated" : "Ticket created");
       if (result.data.jiraIssueKey) {
-        toast.message(`Jira: ${result.data.jiraIssueKey}`);
+        toast.message(
+          result.data.syncMessage ?? `Jira: ${result.data.jiraIssueKey}`
+        );
       }
       setOpen(false);
       refresh();
@@ -249,7 +251,11 @@ export function TicketsBoard({
         toast.error(result.error);
         return;
       }
-      toast.success(`Synced as ${result.data.jiraIssueKey}`);
+      toast.success(
+        result.data.jiraIssueKey
+          ? result.data.syncMessage ?? `Synced as ${result.data.jiraIssueKey}`
+          : "Synced to Jira"
+      );
       refresh();
     });
   }
@@ -826,14 +832,23 @@ export function TicketsBoard({
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
                         )}
-                        {permissions.canSyncJira && !item.jiraIssueKey && (
+                        {permissions.canSyncJira && (
                           <Button
                             variant="ghost"
                             size="icon"
                             className="h-7 w-7"
                             disabled={isPending}
                             onClick={() => handleSync(item)}
-                            aria-label="Sync Jira"
+                            aria-label={
+                              item.jiraIssueKey
+                                ? "Push update to Jira"
+                                : "Sync to Jira"
+                            }
+                            title={
+                              item.jiraIssueKey
+                                ? `Push update to ${item.jiraIssueKey}`
+                                : "Create Jira issue"
+                            }
                           >
                             <RefreshCw className="h-3.5 w-3.5" />
                           </Button>
