@@ -12,6 +12,19 @@ export const createProjectSchema = z.object({
     ),
   clientId: z.string().optional(),
   isActive: z.boolean().optional(),
+  jiraProjectKey: z
+    .string()
+    .max(20)
+    .optional()
+    .nullable()
+    .transform((v) => {
+      if (!v) return null;
+      const s = v.trim().toUpperCase();
+      return s.length === 0 ? null : s;
+    })
+    .refine((v) => v === null || /^[A-Z][A-Z0-9]+$/.test(v), {
+      message: "Jira project key must be like PROJ",
+    }),
 });
 
 export const updateProjectSchema = z.object({
@@ -26,6 +39,19 @@ export const updateProjectSchema = z.object({
       "Code must be uppercase (e.g. PORTAL or ACME_APP)"
     ),
   isActive: z.boolean(),
+  jiraProjectKey: z
+    .string()
+    .max(20)
+    .optional()
+    .nullable()
+    .transform((v) => {
+      if (!v) return null;
+      const s = v.trim().toUpperCase();
+      return s.length === 0 ? null : s;
+    })
+    .refine((v) => v === null || /^[A-Z][A-Z0-9]+$/.test(v), {
+      message: "Jira project key must be like PROJ",
+    }),
 });
 
 export const deactivateProjectSchema = z.object({

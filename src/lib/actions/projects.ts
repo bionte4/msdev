@@ -21,6 +21,7 @@ export interface ProjectItem {
   clientCode: string;
   name: string;
   code: string;
+  jiraProjectKey: string | null;
   isActive: boolean;
   timesheetCount: number;
   scopeSwapCount: number;
@@ -56,6 +57,7 @@ function mapProject(
     clientId: string;
     name: string;
     code: string;
+    jiraProjectKey: string | null;
     isActive: boolean;
     client: { name: string; code: string };
     _count: { timesheets: number; scopeSwaps: number };
@@ -69,6 +71,7 @@ function mapProject(
     clientCode: row.client.code,
     name: row.name,
     code: row.code,
+    jiraProjectKey: row.jiraProjectKey ?? null,
     isActive: row.isActive,
     timesheetCount: row._count.timesheets,
     scopeSwapCount: row._count.scopeSwaps,
@@ -196,6 +199,7 @@ export async function createProject(
         name: parsed.data.name,
         code,
         isActive: parsed.data.isActive ?? true,
+        jiraProjectKey: parsed.data.jiraProjectKey ?? null,
       },
       include: {
         client: { select: { name: true, code: true } },
@@ -247,6 +251,7 @@ export async function updateProject(
         name: parsed.data.name,
         code,
         isActive: parsed.data.isActive,
+        jiraProjectKey: parsed.data.jiraProjectKey ?? null,
       },
       include: {
         client: { select: { name: true, code: true } },

@@ -52,6 +52,7 @@ interface FormState {
   name: string;
   code: string;
   clientId: string;
+  jiraProjectKey: string;
   isActive: boolean;
 }
 
@@ -60,6 +61,7 @@ function emptyForm(defaultClientId: string): FormState {
     name: "",
     code: "",
     clientId: defaultClientId,
+    jiraProjectKey: "",
     isActive: true,
   };
 }
@@ -92,6 +94,7 @@ export function ProjectCrud({
       name: item.name,
       code: item.code,
       clientId: item.clientId,
+      jiraProjectKey: item.jiraProjectKey ?? "",
       isActive: item.isActive,
     });
     setOpen(true);
@@ -106,6 +109,7 @@ export function ProjectCrud({
           name: form.name,
           code: form.code.trim().toUpperCase(),
           isActive: form.isActive,
+          jiraProjectKey: form.jiraProjectKey.trim() || null,
         });
         if (!result.success) {
           toast.error(result.error);
@@ -118,6 +122,7 @@ export function ProjectCrud({
           code: form.code.trim().toUpperCase(),
           clientId: form.clientId || undefined,
           isActive: form.isActive,
+          jiraProjectKey: form.jiraProjectKey.trim() || null,
         });
         if (!result.success) {
           toast.error(result.error);
@@ -236,6 +241,27 @@ export function ProjectCrud({
                     </Select>
                   </div>
                 )}
+                <div className="space-y-1 sm:col-span-2">
+                  <Label htmlFor="project-jira-key">
+                    Jira project key (optional override)
+                  </Label>
+                  <Input
+                    id="project-jira-key"
+                    value={form.jiraProjectKey}
+                    onChange={(e) =>
+                      setForm((p) => ({
+                        ...p,
+                        jiraProjectKey: e.target.value.toUpperCase(),
+                      }))
+                    }
+                    placeholder="Leave empty → client/global default"
+                    className="uppercase"
+                  />
+                  <p className="text-[11px] text-slate-500">
+                    Overrides Client Jira / global default project key for
+                    import &amp; sync on this portal project.
+                  </p>
+                </div>
                 {form.id && (
                   <div className="flex items-center gap-2 sm:col-span-2">
                     <Switch
@@ -285,6 +311,7 @@ export function ProjectCrud({
                 <TableHead>Name</TableHead>
                 <TableHead>Code</TableHead>
                 <TableHead className="hidden md:table-cell">Client</TableHead>
+                <TableHead className="hidden lg:table-cell">Jira key</TableHead>
                 <TableHead className="hidden lg:table-cell">Usage</TableHead>
                 <TableHead>Status</TableHead>
                 {(permissions.canEdit || permissions.canDeactivate) && (
@@ -297,7 +324,7 @@ export function ProjectCrud({
                 <TableRow>
                   <TableCell
                     colSpan={
-                      permissions.canEdit || permissions.canDeactivate ? 6 : 5
+                      permissions.canEdit || permissions.canDeactivate ? 7 : 6
                     }
                     className="text-[12px] text-slate-500"
                   >
@@ -316,6 +343,9 @@ export function ProjectCrud({
                       <span className="ml-1 text-[11px] text-slate-400">
                         ({item.clientCode})
                       </span>
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell text-[11px] text-slate-600">
+                      {item.jiraProjectKey ?? "—"}
                     </TableCell>
                     <TableCell className="hidden tabular-nums text-[12px] text-slate-500 lg:table-cell">
                       {item.timesheetCount} TS · {item.scopeSwapCount} swaps

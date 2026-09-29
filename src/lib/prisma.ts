@@ -6,7 +6,7 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 /** Bump whenever schema adds models so hot-reload drops the stale singleton. */
-const PRISMA_CLIENT_VERSION = "development-v13-tickets-lazy";
+const PRISMA_CLIENT_VERSION = "development-v15-jira-project-key";
 
 function createPrismaClient(): PrismaClient {
   return new PrismaClient({

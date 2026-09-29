@@ -20,6 +20,18 @@ export interface JiraConnectionFail {
   error: string;
 }
 
+export interface JiraScopeOptions {
+  /**
+   * When true, enabled must be on (ticket sync / write).
+   * When false, credentials alone are enough (verify, test, import pull).
+   */
+  requireEnabled?: boolean;
+  /** Prefer ClientJiraConfig for this company; fall back to global Integrations → Jira. */
+  clientId?: string | null;
+  /** Override config.projectKey (e.g. Project.jiraProjectKey). */
+  projectKeyOverride?: string | null;
+}
+
 function normalizeBaseUrl(url: string): string {
   let cleaned = url.trim().replace(/\/+$/, "");
   // Cloud UI often copies "...atlassian.net/jira" — REST API lives on the host root.
@@ -51,42 +63,18 @@ async function jiraFetch(
   });
 }
 
-export async function loadJiraConfig(options?: {
-  /**
-   * When true, IntegrationConfig.enabled must be on (ticket sync / live features).
-   * When false, credentials alone are enough (personnel verify, Integrations test).
-   */
-  requireEnabled?: boolean;
-}): Promise<
-  | { ok: true; config: JiraConfig; enabled: boolean }
-  | { ok: false; error: string }
-> {
-  const requireEnabled = options?.requireEnabled ?? true;
-
-  const row = await prisma.integrationConfig.findUnique({
-    where: { provider: "JIRA" },
-  });
-  if (!row) {
-    return {
-      ok: false,
-      error:
-        "Jira is not configured. Ask SYS_ADMIN to save credentials in Integrations → Jira.",
-    };
-  }
-  if (requireEnabled && !row.enabled) {
-    return {
-      ok: false,
-      error:
-        "Jira sync is disabled. Enable Integrations → Jira to sync tickets (personnel verify still works once credentials are saved).",
-    };
-  }
-
-  const raw =
-    row.config && typeof row.config === "object" && !Array.isArray(row.config)
-      ? (row.config as Record<string, unknown>)
+function parseConfigRecord(
+  raw: unknown,
+  sourceLabel: string
+):
+  | { ok: true; config: JiraConfig }
+  | { ok: false; error: string } {
+  const record =
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
       : {};
 
-  const parsed = jiraConfigSchema.safeParse(raw);
+  const parsed = jiraConfigSchema.safeParse(record);
   if (!parsed.success) {
     const missing = parsed.error.issues
       .map((issue) => {
@@ -97,25 +85,117 @@ export async function loadJiraConfig(options?: {
       .join("; ");
     return {
       ok: false,
-      error: `Jira credentials incomplete in Integrations → Jira. Save base URL, service-account email, API token, and project key first. (${missing})`,
+      error: `Jira credentials incomplete (${sourceLabel}). Save base URL, service-account email, API token, and project key. (${missing})`,
     };
   }
 
   if (!parsed.data.apiToken || parsed.data.apiToken.includes("••••")) {
     return {
       ok: false,
-      error: "Jira API token is missing. Re-save the token in Integrations.",
+      error: `Jira API token is missing (${sourceLabel}). Re-save the token.`,
     };
   }
 
-  return { ok: true, config: parsed.data, enabled: row.enabled };
+  return { ok: true, config: parsed.data };
 }
 
-export async function testJiraConnection(): Promise<
-  JiraConnectionOk | JiraConnectionFail
+/**
+ * Resolve Jira credentials:
+ * 1) ClientJiraConfig for clientId (if present)
+ * 2) else global IntegrationConfig provider=JIRA
+ * Then apply optional projectKeyOverride.
+ */
+export async function loadJiraConfig(options?: JiraScopeOptions): Promise<
+  | {
+      ok: true;
+      config: JiraConfig;
+      enabled: boolean;
+      source: "client" | "global";
+      clientId: string | null;
+    }
+  | { ok: false; error: string }
 > {
+  const requireEnabled = options?.requireEnabled ?? true;
+  const clientId = options?.clientId?.trim() || null;
+  const projectKeyOverride = options?.projectKeyOverride?.trim() || null;
+
+  if (clientId) {
+    const clientRow = await prisma.clientJiraConfig.findUnique({
+      where: { clientId },
+    });
+    if (clientRow) {
+      if (requireEnabled && !clientRow.enabled) {
+        return {
+          ok: false,
+          error:
+            "Jira sync is disabled for this company. Enable Client Jira in Integrations (or use global) to sync tickets.",
+        };
+      }
+      const parsed = parseConfigRecord(
+        clientRow.config,
+        `Client Jira · ${clientId}`
+      );
+      if (!parsed.ok) return parsed;
+      const config: JiraConfig = {
+        ...parsed.config,
+        projectKey: projectKeyOverride || parsed.config.projectKey,
+        baseUrl: normalizeBaseUrl(parsed.config.baseUrl),
+      };
+      return {
+        ok: true,
+        config,
+        enabled: clientRow.enabled,
+        source: "client",
+        clientId,
+      };
+    }
+  }
+
+  const row = await prisma.integrationConfig.findUnique({
+    where: { provider: "JIRA" },
+  });
+  if (!row) {
+    return {
+      ok: false,
+      error: clientId
+        ? "No Client Jira config and no global Integrations → Jira. Save credentials for this company or the global default."
+        : "Jira is not configured. Ask SYS_ADMIN to save credentials in Integrations → Jira.",
+    };
+  }
+  if (requireEnabled && !row.enabled) {
+    return {
+      ok: false,
+      error:
+        "Jira sync is disabled. Enable Integrations → Jira (global) or Client Jira to sync tickets (personnel verify still works once credentials are saved).",
+    };
+  }
+
+  const parsed = parseConfigRecord(row.config, "Integrations → Jira (global)");
+  if (!parsed.ok) return parsed;
+
+  const config: JiraConfig = {
+    ...parsed.config,
+    projectKey: projectKeyOverride || parsed.config.projectKey,
+    baseUrl: normalizeBaseUrl(parsed.config.baseUrl),
+  };
+
+  return {
+    ok: true,
+    config,
+    enabled: row.enabled,
+    source: "global",
+    clientId,
+  };
+}
+
+export async function testJiraConnection(
+  scope?: JiraScopeOptions
+): Promise<JiraConnectionOk | JiraConnectionFail> {
   // Allow testing credentials before the "enabled" toggle is turned on.
-  const loaded = await loadJiraConfig({ requireEnabled: false });
+  const loaded = await loadJiraConfig({
+    ...scope,
+    requireEnabled: false,
+  });
   if (!loaded.ok) return loaded;
 
   const { config } = loaded;
@@ -129,14 +209,12 @@ export async function testJiraConnection(): Promise<
         error: `Jira auth failed (${myselfRes.status}): ${body.slice(0, 180) || myselfRes.statusText}`,
       };
     }
+
     const myself = (await myselfRes.json()) as {
       accountId?: string;
       displayName?: string;
       emailAddress?: string;
     };
-    if (!myself.accountId) {
-      return { ok: false, error: "Jira /myself did not return an accountId" };
-    }
 
     const projectRes = await jiraFetch(
       config,
@@ -149,6 +227,7 @@ export async function testJiraConnection(): Promise<
         error: `Jira project “${config.projectKey}” not accessible (${projectRes.status}): ${body.slice(0, 180) || projectRes.statusText}`,
       };
     }
+
     const project = (await projectRes.json()) as {
       id?: string;
       key?: string;
@@ -159,14 +238,14 @@ export async function testJiraConnection(): Promise<
       ok: true,
       config,
       myself: {
-        accountId: myself.accountId,
-        displayName: myself.displayName ?? myself.accountId,
+        accountId: myself.accountId ?? "",
+        displayName: myself.displayName ?? "Unknown",
         emailAddress: myself.emailAddress,
       },
       project: {
-        id: project.id ?? "",
         key: project.key ?? config.projectKey,
         name: project.name ?? config.projectKey,
+        id: project.id ?? "",
       },
     };
   } catch (error) {
@@ -187,23 +266,23 @@ function pickBestUser(
     emailAddress?: string;
     active?: boolean;
   }>,
-  email: string
+  query: string
 ): JiraUserMatch | null {
-  const needle = email.trim().toLowerCase();
+  const q = query.trim().toLowerCase();
   const withId = users.filter((u) => u.accountId);
   if (withId.length === 0) return null;
 
   const exactEmail = withId.find(
-    (u) => (u.emailAddress ?? "").toLowerCase() === needle
+    (u) => u.emailAddress?.toLowerCase() === q
   );
-  const chosen = exactEmail ?? withId[0];
-  if (!chosen.accountId) return null;
+  const pick = exactEmail ?? withId[0];
+  if (!pick.accountId) return null;
 
   return {
-    accountId: chosen.accountId,
-    displayName: chosen.displayName ?? chosen.accountId,
-    emailAddress: chosen.emailAddress ?? null,
-    active: chosen.active !== false,
+    accountId: pick.accountId,
+    displayName: pick.displayName ?? pick.emailAddress ?? query,
+    emailAddress: pick.emailAddress ?? null,
+    active: pick.active ?? true,
   };
 }
 
@@ -212,14 +291,18 @@ function pickBestUser(
  * Tries user/search then assignable/search (project-scoped).
  */
 export async function verifyJiraUserByEmail(
-  email: string
+  email: string,
+  scope?: JiraScopeOptions
 ): Promise<
   | { ok: true; user: JiraUserMatch; config: JiraConfig }
   | { ok: false; error: string }
 > {
   const skip = process.env.JIRA_SKIP_VERIFY === "true";
   if (skip) {
-    const loaded = await loadJiraConfig({ requireEnabled: false });
+    const loaded = await loadJiraConfig({
+      ...scope,
+      requireEnabled: false,
+    });
     if (!loaded.ok) {
       return {
         ok: true,
@@ -250,7 +333,7 @@ export async function verifyJiraUserByEmail(
     };
   }
 
-  const connection = await testJiraConnection();
+  const connection = await testJiraConnection(scope);
   if (!connection.ok) return connection;
 
   const { config } = connection;
@@ -271,12 +354,6 @@ export async function verifyJiraUserByEmail(
       }>;
       const match = pickBestUser(users, query);
       if (match) {
-        if (
-          match.emailAddress &&
-          match.emailAddress.toLowerCase() !== query.toLowerCase()
-        ) {
-          // Ambiguous / email redacted — still accept if single strong match from query
-        }
         return { ok: true, user: match, config };
       }
     }
@@ -320,15 +397,34 @@ export async function verifyJiraUserByEmail(
   }
 }
 
-export async function createJiraIssue(input: {
-  summary: string;
-  description?: string | null;
-  labels?: string[];
-}): Promise<
+function adfDescription(text: string) {
+  return {
+    type: "doc" as const,
+    version: 1 as const,
+    content: [
+      {
+        type: "paragraph" as const,
+        content: [{ type: "text" as const, text: text.slice(0, 8000) }],
+      },
+    ],
+  };
+}
+
+export async function createJiraIssue(
+  input: {
+    summary: string;
+    description?: string | null;
+    labels?: string[];
+  },
+  scope?: JiraScopeOptions
+): Promise<
   | { ok: true; key: string; id: string; config: JiraConfig }
   | { ok: false; error: string }
 > {
-  const loaded = await loadJiraConfig({ requireEnabled: true });
+  const loaded = await loadJiraConfig({
+    ...scope,
+    requireEnabled: true,
+  });
   if (!loaded.ok) return loaded;
 
   const { config } = loaded;
@@ -343,16 +439,7 @@ export async function createJiraIssue(input: {
           summary: input.summary.slice(0, 255),
           issuetype: { name: config.issueType || "Task" },
           labels: input.labels?.slice(0, 10) ?? [],
-          description: {
-            type: "doc",
-            version: 1,
-            content: [
-              {
-                type: "paragraph",
-                content: [{ type: "text", text: text.slice(0, 8000) }],
-              },
-            ],
-          },
+          description: adfDescription(text),
         },
       }),
     });
@@ -382,30 +469,23 @@ export async function createJiraIssue(input: {
   }
 }
 
-function adfDescription(text: string) {
-  return {
-    type: "doc" as const,
-    version: 1 as const,
-    content: [
-      {
-        type: "paragraph" as const,
-        content: [{ type: "text" as const, text: text.slice(0, 8000) }],
-      },
-    ],
-  };
-}
-
 /**
  * Push portal field changes to an existing Jira issue (summary + description + labels).
- * Requires Integrations → Jira Enabled (write path).
+ * Requires Enabled on the resolved client/global config (write path).
  */
-export async function updateJiraIssue(input: {
-  issueKey: string;
-  summary: string;
-  description?: string | null;
-  labels?: string[];
-}): Promise<{ ok: true; key: string; config: JiraConfig } | { ok: false; error: string }> {
-  const loaded = await loadJiraConfig({ requireEnabled: true });
+export async function updateJiraIssue(
+  input: {
+    issueKey: string;
+    summary: string;
+    description?: string | null;
+    labels?: string[];
+  },
+  scope?: JiraScopeOptions
+): Promise<{ ok: true; key: string; config: JiraConfig } | { ok: false; error: string }> {
+  const loaded = await loadJiraConfig({
+    ...scope,
+    requireEnabled: true,
+  });
   if (!loaded.ok) return loaded;
 
   const { config } = loaded;
@@ -453,20 +533,37 @@ export async function updateJiraIssue(input: {
 /**
  * Best-effort status sync via Jira transitions (workflow names vary by project).
  */
-export async function transitionJiraIssue(input: {
-  issueKey: string;
-  portalStatus: "OPEN" | "IN_PROGRESS" | "DONE" | "CANCELLED";
-}): Promise<{ ok: true; transitioned: boolean; name?: string } | { ok: false; error: string }> {
-  const loaded = await loadJiraConfig({ requireEnabled: true });
+export async function transitionJiraIssue(
+  input: {
+    issueKey: string;
+    portalStatus: "OPEN" | "IN_PROGRESS" | "DONE" | "CANCELLED";
+  },
+  scope?: JiraScopeOptions
+): Promise<
+  | { ok: true; transitioned: boolean; name?: string }
+  | { ok: false; error: string }
+> {
+  const loaded = await loadJiraConfig({
+    ...scope,
+    requireEnabled: true,
+  });
   if (!loaded.ok) return loaded;
 
   const { config } = loaded;
   const key = input.issueKey.trim();
 
   const preferred: Record<string, string[]> = {
-    OPEN: ["to do", "todo", "open", "backlog", "reopen", "to do"],
+    OPEN: ["to do", "todo", "open", "backlog", "reopen"],
     IN_PROGRESS: ["in progress", "start progress", "progress", "doing"],
-    DONE: ["done", "close", "closed", "resolve", "resolved", "complete", "completed"],
+    DONE: [
+      "done",
+      "close",
+      "closed",
+      "resolve",
+      "resolved",
+      "complete",
+      "completed",
+    ],
     CANCELLED: ["cancel", "cancelled", "won't do", "wont do", "decline"],
   };
 
@@ -484,7 +581,11 @@ export async function transitionJiraIssue(input: {
     }
 
     const data = (await listRes.json()) as {
-      transitions?: Array<{ id?: string; name?: string; to?: { name?: string } }>;
+      transitions?: Array<{
+        id?: string;
+        name?: string;
+        to?: { name?: string };
+      }>;
     };
     const transitions = data.transitions ?? [];
     if (transitions.length === 0) {
@@ -555,17 +656,21 @@ function extractAdfText(node: unknown): string {
 }
 
 /**
- * Pull issues from the configured Jira project (read-only).
+ * Pull issues from the resolved Jira project (read-only).
  * Credentials required; Enabled toggle not required (Enabled gates outbound sync).
  */
 export async function searchJiraIssues(input?: {
   maxResults?: number;
   jql?: string;
+  scope?: JiraScopeOptions;
 }): Promise<
   | { ok: true; issues: JiraIssueImportRow[]; config: JiraConfig; jql: string }
   | { ok: false; error: string }
 > {
-  const loaded = await loadJiraConfig({ requireEnabled: false });
+  const loaded = await loadJiraConfig({
+    ...input?.scope,
+    requireEnabled: false,
+  });
   if (!loaded.ok) return loaded;
 
   const { config } = loaded;
@@ -611,7 +716,6 @@ export async function searchJiraIssues(input?: {
     const collected: RawIssue[] = [];
     let nextPageToken: string | undefined;
 
-    // Enhanced search API (legacy /rest/api/3/search returns 410 Gone).
     while (collected.length < maxResults) {
       const pageSize = Math.min(maxResults - collected.length, 100);
       const res = await jiraFetch(config, "/rest/api/3/search/jql", {

@@ -150,6 +150,7 @@ model Client {
   replacements    ReplacementTicket[]
   coverages       CoverageAssignment[]
   operationalTickets OperationalTicket[]
+  jiraConfig      ClientJiraConfig?
 }
 
 /// Multi-company access: one user (e.g. CLIENT_PM) can belong to many Clients.
@@ -279,17 +280,19 @@ model Developer {
 }
 
 model Project {
-  id          String   @id @default(cuid())
-  clientId    String
-  client      Client   @relation(fields: [clientId], references: [id])
-  name        String
-  code        String
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  timesheets  Timesheet[]
-  scopeSwaps  ScopeSwap[]
-  coverages   CoverageAssignment[]
+  id             String   @id @default(cuid())
+  clientId       String
+  client         Client   @relation(fields: [clientId], references: [id])
+  name           String
+  code           String
+  isActive       Boolean  @default(true)
+  /// Optional Jira project key override for this portal project (else client/global default).
+  jiraProjectKey String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  timesheets     Timesheet[]
+  scopeSwaps     ScopeSwap[]
+  coverages      CoverageAssignment[]
   operationalTickets OperationalTicket[]
 
   @@unique([clientId, code])
@@ -488,6 +491,23 @@ model IntegrationConfig {
   enabled         Boolean               @default(false)
   displayName     String
   description     String
+  config          Json
+  lastTestedAt    DateTime?
+  lastTestStatus  IntegrationTestStatus @default(NEVER)
+  lastTestMessage String?
+  updatedById     String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+}
+
+/// Per-company Jira site credentials. Falls back to global IntegrationConfig JIRA when absent.
+model ClientJiraConfig {
+  id              String                @id @default(cuid())
+  clientId        String                @unique
+  client          Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  enabled         Boolean               @default(false)
+  displayName     String                @default("Jira")
+  /// Shape: { baseUrl, email, apiToken, projectKey, issueType }
   config          Json
   lastTestedAt    DateTime?
   lastTestStatus  IntegrationTestStatus @default(NEVER)

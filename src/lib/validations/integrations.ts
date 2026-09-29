@@ -101,6 +101,20 @@ export type SmtpConfig = z.infer<typeof smtpConfigSchema>;
 export type JiraConfig = z.infer<typeof jiraConfigSchema>;
 export type ServiceNowConfig = z.infer<typeof serviceNowConfigSchema>;
 
+export const upsertClientJiraSchema = z.object({
+  clientId: z.string().min(1, "Client is required"),
+  enabled: z.boolean(),
+  config: jiraConfigSchema,
+});
+
+export type UpsertClientJiraInput = z.infer<typeof upsertClientJiraSchema>;
+
+export const testClientJiraSchema = z.object({
+  clientId: z.string().min(1),
+});
+
+export type TestClientJiraInput = z.infer<typeof testClientJiraSchema>;
+
 export const DEFAULT_INTEGRATION_CONFIGS: Record<
   IntegrationProviderKey,
   {
@@ -135,7 +149,7 @@ export const DEFAULT_INTEGRATION_CONFIGS: Record<
   JIRA: {
     displayName: "Jira",
     description:
-      "Credentials for personnel verify (always) and ticket sync when Enabled.",
+      "Global default credentials. Prefer Client Jira below when companies use different Atlassian sites. Enabled gates push sync.",
     config: {
       baseUrl: "https://your-org.atlassian.net",
       email: "",

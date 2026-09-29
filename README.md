@@ -21,7 +21,7 @@ evaluations, coverage, development, scope swaps, and operational tickets.
 | `/dashboard` | Role-scoped home KPIs & attention queue |
 | `/capacity` | Weekly capacity utilization |
 | `/clients` | Client organizations (tenant) · engagement mode |
-| `/projects` | Project CRUD · timesheet / ticket / scope-swap targets |
+| `/projects` | Project CRUD · optional Jira project key override · timesheet / ticket targets |
 | `/personnel` | Roster + leave · **Allow overtime** (lump-sum guard) · Jira link |
 | `/coverage` | Leave coverage assignments |
 | `/development` | Skill catalog CRUD · training · coaching · reward/punishment |
@@ -33,7 +33,7 @@ evaluations, coverage, development, scope swaps, and operational tickets.
 | `/tickets` | Operational tickets · daily + Excel bulk · **Import from Jira** · push sync · monthly summary |
 | `/reports` | Operational reports · Excel export (incl. tickets) |
 | `/access` | User access · roles · **multi-company membership** |
-| `/integrations` | Email, SMTP, Jira (verify + ticket sync), ServiceNow |
+| `/integrations` | Global connectors + **per-company Jira** sites · ServiceNow |
 
 ## RBAC
 

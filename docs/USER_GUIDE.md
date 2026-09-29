@@ -303,18 +303,23 @@ Data mengikuti **company aktif** (multi-company switcher).
 Kartu konfigurasi:
 
 - Email / SMTP (notifikasi)
-- **Jira** — test live ke `/myself` + project; dipakai verifikasi email personil **dan** sync tiket operasional opsional
+- **Jira (global)** — default portal-wide; fallback jika client belum punya config sendiri
+- **Client Jira (per company)** — tiap client bisa memakai **site Atlassian berbeda** (base URL, token, default project key)
 - ServiceNow
+
+**Project override:** di `/projects`, field opsional **Jira project key** — override key untuk portal project tertentu pada site client/global.
+
+Resolusi sync/import/verify: **Client Jira → global**, lalu **Project.jiraProjectKey → default project key**.
 
 Admin dapat menguji koneksi dan menyimpan config; secret disembunyikan untuk non-admin.
 
 **Alur verify Jira personil**
 
-1. Admin isi Integrations → Jira (base URL, email service account, API token, project key) → **Test** sampai SUCCESS (boleh tanpa toggle Enabled).
-2. Di Personnel, isi / link email Jira developer (**Test/Link** memakai kredensial di atas; Enabled tidak wajib).
+1. Admin isi **Client Jira** untuk company aktif (atau global Jira) → **Test** sampai SUCCESS (boleh tanpa toggle Enabled).
+2. Di Personnel, isi / link email Jira developer (**Test/Link** memakai kredensial client/global; Enabled tidak wajib).
 3. Portal memanggil Jira user search; jika ketemu, status **Verified** + `accountId` tersimpan.
-4. **Enabled** di Integrations diperlukan hanya untuk **push** tiket portal → Jira.
-5. **Import from Jira** (pull) memakai kredensial tersimpan; Enabled tidak wajib.
+4. **Enabled** (global atau client) diperlukan hanya untuk **push** tiket portal → Jira.
+5. **Import from Jira** (pull) memakai kredensial client/global + project key override; Enabled tidak wajib.
 6. Tanpa kredensial Jira (atau token kosong), link / import ditolak dengan pesan error yang jelas.
 
 ---

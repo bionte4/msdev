@@ -243,7 +243,7 @@ export async function createPersonnel(
     if (jiraEmail) {
       const taken = await assertJiraEmailAvailable(jiraEmail);
       if (taken) return fail(taken);
-      const verified = await verifyJiraUserByEmail(jiraEmail);
+      const verified = await verifyJiraUserByEmail(jiraEmail, { clientId });
       if (!verified.ok) return fail(verified.error);
       jiraAccountId = verified.user.accountId;
     }
@@ -342,7 +342,9 @@ export async function updatePersonnel(
 
     if (jiraChanged) {
       if (jiraEmail) {
-        const verified = await verifyJiraUserByEmail(jiraEmail);
+        const verified = await verifyJiraUserByEmail(jiraEmail, {
+          clientId: existing.clientId,
+        });
         if (!verified.ok) return fail(verified.error);
         nextJiraAccountId = verified.user.accountId;
         nextJiraLinkedAt = new Date();
@@ -352,7 +354,9 @@ export async function updatePersonnel(
       }
     } else if (jiraEmail && !existing.jiraAccountId) {
       // Re-verify previously stored email that never got an accountId.
-      const verified = await verifyJiraUserByEmail(jiraEmail);
+      const verified = await verifyJiraUserByEmail(jiraEmail, {
+        clientId: existing.clientId,
+      });
       if (!verified.ok) return fail(verified.error);
       nextJiraAccountId = verified.user.accountId;
       nextJiraLinkedAt = new Date();
@@ -483,7 +487,9 @@ export async function linkJiraAccount(
     );
     if (taken) return fail(taken);
 
-    const verified = await verifyJiraUserByEmail(parsed.data.jiraAccountEmail);
+    const verified = await verifyJiraUserByEmail(parsed.data.jiraAccountEmail, {
+      clientId: scope.developer.clientId,
+    });
     if (!verified.ok) return fail(verified.error);
 
     const updated = await prisma.developer.update({
@@ -587,6 +593,7 @@ export async function testPersonnelJiraConnection(
       return fail(formatZodError(parsed.error, "Invalid Jira email"));
     }
 
+    let clientIdForJira: string | null = session.user.clientId ?? null;
     if (parsed.data.developerId) {
       const scope = await assertPersonnelScope(
         session,
@@ -597,6 +604,7 @@ export async function testPersonnelJiraConnection(
       if (!perms.canLinkJira && !(perms.canLinkOwnJira && isSelf)) {
         return fail("Unauthorized to test Jira for this developer");
       }
+      clientIdForJira = scope.developer.clientId;
     } else if (!perms.canLinkJira && !perms.canCreate) {
       return fail("Unauthorized to test Jira connection");
     }
@@ -609,7 +617,9 @@ export async function testPersonnelJiraConnection(
       return fail(taken);
     }
 
-    const verified = await verifyJiraUserByEmail(parsed.data.jiraAccountEmail);
+    const verified = await verifyJiraUserByEmail(parsed.data.jiraAccountEmail, {
+      clientId: clientIdForJira,
+    });
     if (!verified.ok) return fail(verified.error);
 
     return ok({

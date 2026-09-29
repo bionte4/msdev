@@ -208,7 +208,7 @@ function mapTicket(
 }
 
 const ticketInclude = {
-  project: { select: { name: true, code: true } },
+  project: { select: { name: true, code: true, jiraProjectKey: true } },
   assignee: {
     select: { user: { select: { name: true, email: true } } },
   },
@@ -221,7 +221,14 @@ async function assertProjectInScope(
 ) {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
-    select: { id: true, clientId: true, isActive: true, name: true, code: true },
+    select: {
+      id: true,
+      clientId: true,
+      isActive: true,
+      name: true,
+      code: true,
+      jiraProjectKey: true,
+    },
   });
   if (!project || !project.isActive) {
     throw new Error("Project not found or inactive");
@@ -270,32 +277,42 @@ async function resolveAssignee(
   return developer;
 }
 
-async function pushTicketToJira(ticket: {
-  id: string;
-  title: string;
-  description: string | null;
-  category: string;
-  project: { code: string };
-  workDate: Date;
-}): Promise<{
+async function pushTicketToJira(
+  ticket: {
+    id: string;
+    clientId: string;
+    title: string;
+    description: string | null;
+    category: string;
+    project: { code: string; jiraProjectKey?: string | null };
+    workDate: Date;
+  }
+): Promise<{
   syncStatus: "SYNCED" | "FAILED" | "SKIPPED";
   jiraIssueKey: string | null;
   jiraIssueId: string | null;
   syncMessage: string | null;
 }> {
-  const result = await createJiraIssue({
-    summary: `[${ticket.project.code}] ${ticket.title}`,
-    description: [
-      ticket.description ?? "",
-      "",
-      `Category: ${ticket.category}`,
-      `Work date: ${isoDate(ticket.workDate)}`,
-      `Portal ticket: ${ticket.id}`,
-    ]
-      .filter(Boolean)
-      .join("\n"),
-    labels: ["governance-portal", ticket.category.toLowerCase()],
-  });
+  const scope = {
+    clientId: ticket.clientId,
+    projectKeyOverride: ticket.project.jiraProjectKey ?? null,
+  };
+  const result = await createJiraIssue(
+    {
+      summary: `[${ticket.project.code}] ${ticket.title}`,
+      description: [
+        ticket.description ?? "",
+        "",
+        `Category: ${ticket.category}`,
+        `Work date: ${isoDate(ticket.workDate)}`,
+        `Portal ticket: ${ticket.id}`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      labels: ["governance-portal", ticket.category.toLowerCase()],
+    },
+    scope
+  );
 
   if (!result.ok) {
     return {
@@ -316,17 +333,22 @@ async function pushTicketToJira(ticket: {
 
 async function pushTicketUpdateToJira(ticket: {
   id: string;
+  clientId: string;
   title: string;
   description: string | null;
   category: string;
   status: string;
   jiraIssueKey: string;
-  project: { code: string };
+  project: { code: string; jiraProjectKey?: string | null };
   workDate: Date;
 }): Promise<{
   syncStatus: "SYNCED" | "FAILED";
   syncMessage: string | null;
 }> {
+  const scope = {
+    clientId: ticket.clientId,
+    projectKeyOverride: ticket.project.jiraProjectKey ?? null,
+  };
   const summary = `[${ticket.project.code}] ${ticket.title}`;
   const description = [
     ticket.description ?? "",
@@ -339,22 +361,28 @@ async function pushTicketUpdateToJira(ticket: {
     .filter(Boolean)
     .join("\n");
 
-  const updated = await updateJiraIssue({
-    issueKey: ticket.jiraIssueKey,
-    summary,
-    description,
-    labels: ["governance-portal", ticket.category.toLowerCase()],
-  });
+  const updated = await updateJiraIssue(
+    {
+      issueKey: ticket.jiraIssueKey,
+      summary,
+      description,
+      labels: ["governance-portal", ticket.category.toLowerCase()],
+    },
+    scope
+  );
 
   if (!updated.ok) {
     return { syncStatus: "FAILED", syncMessage: updated.error };
   }
 
   const status = ticket.status as TicketStatus;
-  const transition = await transitionJiraIssue({
-    issueKey: ticket.jiraIssueKey,
-    portalStatus: status,
-  });
+  const transition = await transitionJiraIssue(
+    {
+      issueKey: ticket.jiraIssueKey,
+      portalStatus: status,
+    },
+    scope
+  );
 
   if (!transition.ok) {
     return {
@@ -656,12 +684,16 @@ export async function updateTicket(
     if (shouldPush && existing.jiraIssueKey) {
       const sync = await pushTicketUpdateToJira({
         id: updated.id,
+        clientId: updated.clientId,
         title: updated.title,
         description: updated.description,
         category: updated.category,
         status: updated.status,
         jiraIssueKey: existing.jiraIssueKey,
-        project: { code: updated.project.code },
+        project: {
+          code: updated.project.code,
+          jiraProjectKey: updated.project.jiraProjectKey,
+        },
         workDate: updated.workDate,
       });
       updated = await prisma.operationalTicket.update({
@@ -744,7 +776,7 @@ export async function syncTicketToJira(
     const existing = await prisma.operationalTicket.findUnique({
       where: { id: parsed.data.id },
       include: {
-        project: { select: { code: true } },
+        project: { select: { code: true, jiraProjectKey: true } },
       },
     });
     if (!existing) return fail("Ticket not found");
@@ -759,6 +791,7 @@ export async function syncTicketToJira(
     if (existing.jiraIssueKey) {
       const sync = await pushTicketUpdateToJira({
         id: existing.id,
+        clientId: existing.clientId,
         title: existing.title,
         description: existing.description,
         category: existing.category,
@@ -876,6 +909,10 @@ export async function importTicketsFromJira(
     const searched = await searchJiraIssues({
       maxResults: parsed.data.maxResults,
       jql: parsed.data.jql ?? undefined,
+      scope: {
+        clientId,
+        projectKeyOverride: project.jiraProjectKey,
+      },
     });
     if (!searched.ok) return fail(searched.error);
 
@@ -1240,7 +1277,9 @@ export async function bulkImportTickets(
             notes: row.notes?.trim() || null,
             syncStatus: row.syncToJira ? "NOT_SYNCED" : "SKIPPED",
           },
-          include: { project: { select: { code: true } } },
+          include: {
+            project: { select: { code: true, jiraProjectKey: true } },
+          },
         });
 
         created += 1;
