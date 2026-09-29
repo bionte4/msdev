@@ -427,58 +427,78 @@ export async function searchJiraIssues(input?: {
     `project = ${config.projectKey} ORDER BY updated DESC`;
 
   try {
-    const res = await jiraFetch(config, "/rest/api/3/search", {
-      method: "POST",
-      body: JSON.stringify({
-        jql,
-        maxResults,
-        fields: [
-          "summary",
-          "description",
-          "status",
-          "assignee",
-          "created",
-          "updated",
-          "issuetype",
-          "labels",
-        ],
-      }),
-    });
+    const fieldList = [
+      "summary",
+      "description",
+      "status",
+      "assignee",
+      "created",
+      "updated",
+      "issuetype",
+      "labels",
+    ];
 
-    if (!res.ok) {
-      const body = await res.text();
-      return {
-        ok: false,
-        error: `Jira search failed (${res.status}): ${body.slice(0, 220) || res.statusText}`,
-      };
-    }
-
-    const data = (await res.json()) as {
-      issues?: Array<{
-        id?: string;
-        key?: string;
-        fields?: {
-          summary?: string;
-          description?: unknown;
-          status?: {
-            name?: string;
-            statusCategory?: { key?: string; name?: string };
-          };
-          assignee?: {
-            accountId?: string;
-            emailAddress?: string;
-            displayName?: string;
-          } | null;
-          labels?: string[];
-          issuetype?: { name?: string };
-          created?: string;
-          updated?: string;
+    type RawIssue = {
+      id?: string;
+      key?: string;
+      fields?: {
+        summary?: string;
+        description?: unknown;
+        status?: {
+          name?: string;
+          statusCategory?: { key?: string; name?: string };
         };
-      }>;
+        assignee?: {
+          accountId?: string;
+          emailAddress?: string;
+          displayName?: string;
+        } | null;
+        labels?: string[];
+        issuetype?: { name?: string };
+        created?: string;
+        updated?: string;
+      };
     };
 
-    const issues: JiraIssueImportRow[] = (data.issues ?? [])
+    const collected: RawIssue[] = [];
+    let nextPageToken: string | undefined;
+
+    // Enhanced search API (legacy /rest/api/3/search returns 410 Gone).
+    while (collected.length < maxResults) {
+      const pageSize = Math.min(maxResults - collected.length, 100);
+      const res = await jiraFetch(config, "/rest/api/3/search/jql", {
+        method: "POST",
+        body: JSON.stringify({
+          jql,
+          maxResults: pageSize,
+          fields: fieldList,
+          ...(nextPageToken ? { nextPageToken } : {}),
+        }),
+      });
+
+      if (!res.ok) {
+        const body = await res.text();
+        return {
+          ok: false,
+          error: `Jira search failed (${res.status}): ${body.slice(0, 220) || res.statusText}`,
+        };
+      }
+
+      const data = (await res.json()) as {
+        issues?: RawIssue[];
+        nextPageToken?: string;
+      };
+
+      const page = data.issues ?? [];
+      collected.push(...page);
+
+      if (!data.nextPageToken || page.length === 0) break;
+      nextPageToken = data.nextPageToken;
+    }
+
+    const issues: JiraIssueImportRow[] = collected
       .filter((issue) => issue.id && issue.key)
+      .slice(0, maxResults)
       .map((issue) => {
         const fields = issue.fields ?? {};
         const descriptionRaw = fields.description;
