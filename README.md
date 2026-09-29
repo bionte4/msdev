@@ -143,7 +143,7 @@ After schema changes, prefer restarting `npm run dev` (Prisma client is version-
 docker compose up -d      # start local Postgres on :5435
 docker compose down       # stop Postgres
 npm run db:up             # alias for docker compose up -d
-npm run db:push           # sync schema
+npm run db:push           # sync schema (local & production after deploy)
 npm run db:seed           # seed demo data
 npm run dev               # Next.js on :3000
 npm run lint

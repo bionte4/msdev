@@ -364,11 +364,17 @@ export async function listClientJiraConfigs(): Promise<
       })
     );
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Failed to list client Jira configs";
-    return fail(message);
+    const raw =
+      error instanceof Error ? error.message : "Failed to list client Jira configs";
+    if (
+      raw.includes("ClientJiraConfig") &&
+      (raw.includes("does not exist") || raw.includes("P2021"))
+    ) {
+      return fail(
+        "Database schema outdated: table ClientJiraConfig is missing. On the production server run: npx prisma db push && restart the app."
+      );
+    }
+    return fail(raw);
   }
 }
 

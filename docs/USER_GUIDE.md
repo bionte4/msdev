@@ -384,6 +384,7 @@ Admin dapat menguji koneksi dan menyimpan config; secret disembunyikan untuk non
 | Login gagal | User nonaktif / password salah / DB down | Cek Access; password demo `password123`; `docker compose up -d` |
 | Data “kosong” setelah ganti company | Scope tenant aktif | Normal — switch kembali / pastikan membership di Access |
 | Tickets error `findMany` | Prisma client stale setelah schema change | Restart `npm run dev` (lihat `src/lib/prisma.ts`) |
+| Integrations: `ClientJiraConfig` does not exist | Code sudah deploy, DB belum di-`db push` | Di server production: `npx prisma db push` lalu restart app (`npm run start` / PM2 / Docker) |
 | Jira Test / Save “credentials incomplete” | Config belum di-Save / API token kosong | Save dulu (Test sekarang auto-Save); paste API token Atlassian |
 | Jira push sync tiket gagal | Integrasi Jira **Enabled** off / token invalid | Nyalakan Enabled + Test Jira; tiket tetap tersimpan di portal |
 | Edit tiket portal tidak ubah Jira | Sebelumnya belum ada push-on-update; atau Enabled off / role tanpa sync | Pastikan Enabled on; Save edit (auto-push) atau ikon refresh; Admin/PM/Lead/AM |
