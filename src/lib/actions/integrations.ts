@@ -500,3 +500,37 @@ export async function testClientJiraConnection(
     return fail(message);
   }
 }
+
+/** Manual trigger for scheduled pull (all companies with Client Jira). */
+export async function runJiraPullNow(): Promise<
+  ActionResult<{
+    imported: number;
+    updated: number;
+    skipped: number;
+    companies: number;
+    projects: number;
+    message: string;
+  }>
+> {
+  try {
+    const session = await auth();
+    assertRole(session, ["SYS_ADMIN"]);
+
+    const { runScheduledJiraPull } = await import(
+      "@/lib/jira/scheduled-pull"
+    );
+    const result = await runScheduledJiraPull({ maxResultsPerProject: 50 });
+    return ok({
+      imported: result.imported,
+      updated: result.updated,
+      skipped: result.skipped,
+      companies: result.companies,
+      projects: result.projects,
+      message: `Pull done · ${result.companies} companies · +${result.imported} new · ~${result.updated} updated · skip ${result.skipped}`,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to run Jira pull";
+    return fail(message);
+  }
+}

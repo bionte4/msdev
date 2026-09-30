@@ -33,7 +33,7 @@ evaluations, coverage, development, scope swaps, and operational tickets.
 | `/tickets` | Operational tickets · daily + Excel bulk · **Import from Jira** · push sync · monthly summary |
 | `/reports` | Operational reports · Excel export (incl. tickets) |
 | `/access` | User access · roles · **multi-company membership** |
-| `/integrations` | Global connectors + **per-company Jira** sites · ServiceNow |
+| `/integrations` | Global connectors + **per-company Jira** · scheduled pull (15m) |
 
 ## RBAC
 
@@ -148,6 +148,8 @@ npm run db:seed           # seed demo data
 npm run dev               # Next.js on :3000
 npm run lint
 npm run build             # local production build check
+# Optional: trigger scheduled Jira pull manually
+# curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/jira-pull
 ```
 
 ## Business rules
@@ -157,6 +159,6 @@ npm run build             # local production build check
 - Evaluation weights: Code 30% · Delivery 25% · Tech 20% · Comm 15% · Prof 10%
 - Score **< 2.80** → replacement ticket (SLA 10 working days)
 - Scope swap: equal story points + hours (1-in, 1-out)
-- Operational tickets: categories Development / Manage Apps / Manage Device / Support / Access / Other · status OPEN → IN_PROGRESS → DONE / CANCELLED · **Import from Jira** (pull; credentials required, Enabled optional) · **push sync** portal → Jira when Enabled
+- Operational tickets: categories Development / Manage Apps / Manage Device / Support / Access / Other · status OPEN → IN_PROGRESS → DONE / CANCELLED · **Import from Jira** · **scheduled pull every 15 min** per Client Jira (`JIRA_PULL_SCHEDULER` / `/api/cron/jira-pull`) · **push sync** portal → Jira when Enabled
 
 > Deploy (Vercel/Neon) ditunda — development dulu di local laptop.

@@ -320,7 +320,8 @@ Admin dapat menguji koneksi dan menyimpan config; secret disembunyikan untuk non
 3. Portal memanggil Jira user search; jika ketemu, status **Verified** + `accountId` tersimpan.
 4. **Enabled** (global atau client) diperlukan hanya untuk **push** tiket portal → Jira.
 5. **Import from Jira** (pull) memakai kredensial client/global + project key override; Enabled tidak wajib.
-6. Tanpa kredensial Jira (atau token kosong), link / import ditolak dengan pesan error yang jelas.
+6. **Scheduled pull** (opsional) — tiap **15 menit** menarik issue Jira → tiket portal untuk **setiap company yang punya Client Jira** (semua project portal aktif di company itu). Issue baru di-import; yang sudah linked di-update (title/status/description). Aktifkan dengan `JIRA_PULL_SCHEDULER=true` (in-process) atau cron eksternal ke `GET/POST /api/cron/jira-pull` + header `Authorization: Bearer $CRON_SECRET`. Tombol **Pull all companies now** di Integrations untuk uji manual.
+7. Tanpa kredensial Jira (atau token kosong), link / import ditolak dengan pesan error yang jelas.
 
 ---
 

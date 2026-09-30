@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, Plug, PlugZap } from "lucide-react";
+import { CloudDownload, Loader2, Plug, PlugZap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select";
 import {
   listClientJiraConfigs,
+  runJiraPullNow,
   testClientJiraConnection,
   upsertClientJiraConfig,
   type ClientJiraCardData,
@@ -170,7 +171,9 @@ export function ClientJiraBoard({
             <CardDescription>
               Different Atlassian sites per client. Falls back to global Jira
               card above when a client has no config. Optional project key
-              override lives on each portal Project.
+              override lives on each portal Project. Scheduled pull (every 15
+              min when enabled) imports/updates tickets for each company with
+              Client Jira saved.
             </CardDescription>
           </div>
           {selected && statusBadge(selected.lastTestStatus)}
@@ -290,6 +293,31 @@ export function ClientJiraBoard({
                   <PlugZap className="h-4 w-4" />
                 )}
                 Test connection
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={isPending}
+                onClick={() =>
+                  startTransition(async () => {
+                    const result = await runJiraPullNow();
+                    if (!result.success) {
+                      toast.error(result.error);
+                      return;
+                    }
+                    toast.success(result.data.message);
+                    const refreshed = await listClientJiraConfigs();
+                    if (refreshed.success) setItems(refreshed.data);
+                    router.refresh();
+                  })
+                }
+              >
+                {isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CloudDownload className="h-4 w-4" />
+                )}
+                Pull all companies now
               </Button>
             </div>
           ) : (
