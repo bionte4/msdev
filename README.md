@@ -30,10 +30,10 @@ evaluations, coverage, development, scope swaps, and operational tickets.
 | `/evaluations` | Monthly scorecard + auto replacement ticket |
 | `/leaderboard` | Ranking by evaluation, rewards, or hours |
 | `/scope-swaps` | 1-in / 1-out scope swap |
-| `/tickets` | Operational tickets · daily + Excel bulk · **Import from Jira** · push sync · monthly summary |
+| `/tickets` | Operational tickets · Excel bulk · Import from Jira · **scheduled pull** · push sync |
 | `/reports` | Operational reports · Excel export (incl. tickets) |
 | `/access` | User access · roles · **multi-company membership** |
-| `/integrations` | Global connectors + **per-company Jira** · scheduled pull (15m) |
+| `/integrations` | Global connectors + **Client Jira** · **Pull now** · scheduled pull (15m) |
 
 ## RBAC
 
@@ -125,6 +125,24 @@ npm run dev
 Open [http://localhost:3000](http://localhost:3000)
 
 After schema changes, prefer restarting `npm run dev` (Prisma client is version-gated; see `src/lib/prisma.ts`).
+
+### Environment (Jira pull)
+
+Copy from `.env.example`. Important keys:
+
+| Variable | Purpose |
+| --- | --- |
+| `JIRA_PULL_SCHEDULER` | `true` = in-process pull every interval (single-node) |
+| `JIRA_PULL_INTERVAL_MS` | Default `900000` (15 minutes); minimum 60s |
+| `CRON_SECRET` | Bearer token for `GET/POST /api/cron/jira-pull` |
+| `JIRA_SKIP_VERIFY` | `true` only for local demos without Atlassian |
+
+**Production checklist after deploy**
+
+1. `npx prisma db push` (creates `ClientJiraConfig`, `Project.jiraProjectKey`, …)
+2. Set `JIRA_PULL_SCHEDULER=true` **or** system cron → `/api/cron/jira-pull`
+3. Set a strong `CRON_SECRET`
+4. Restart the app
 
 ### Seed logins
 

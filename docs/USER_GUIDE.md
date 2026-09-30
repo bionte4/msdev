@@ -270,12 +270,13 @@ Pencatatan tiket operasional **harian** atau **bulk Excel** untuk report bulanan
 1. **Add ticket** — pilih project, kategori, status, judul, deskripsi.
 2. Dev: pilih **assignee** developer. Non-dev: isi **reporter name** (+ email opsional) tanpa profil developer.
 3. **Bulk Excel** — unduh template, isi baris, upload (maks. **300** baris). Wajib `assigneeEmail` **atau** `reporterName`.
-4. **Import from Jira** — tombol di Tickets (Admin/PM/Lead/AM). Pilih project portal + kategori default + max issues (1–100). Portal menarik issue dari project Jira di Integrations (kredensial wajib; **Enabled tidak wajib** untuk pull). Skip jika `jiraIssueKey` sudah ada. Assignee dicocokkan lewat Personnel **Verified** (`jiraAccountId` / email); kalau tidak ketemu, disimpan sebagai reporter.
-5. **Sync Jira** (push portal → Jira) — centang saat create, **auto-push saat edit** jika tiket sudah punya `jiraIssueKey`, atau ikon refresh di baris. Untuk **push/update** butuh Integrations → Jira **Enabled**. Field yang di-push: summary, description, labels; status dicoba via transition (best-effort, tergantung workflow Jira). Gagal sync: tiket tetap tersimpan di portal.
-6. Kartu ringkasan bulanan (by category / status / project) di atas list.
-7. Export detail: **Reports → Operational tickets**.
+4. **Import from Jira** (manual) — tombol di Tickets (Admin/PM/Lead/AM). Pilih project portal + kategori default + max issues (1–100). Pull memakai **Client Jira** company aktif (fallback global). **Enabled tidak wajib**. Skip key yang sudah ada; assignee dicocokkan lewat Personnel **Verified**.
+5. **Scheduled pull** (otomatis, lihat §3.15) — tanpa klik, tiap 15 menit untuk company yang punya Client Jira.
+6. **Sync Jira** (push portal → Jira) — centang saat create, **auto-push saat edit** jika sudah ada `jiraIssueKey`, atau ikon refresh. Butuh **Enabled** (global atau Client Jira). Field: summary, description, labels; status via transition (best-effort).
+7. Kartu ringkasan bulanan (by category / status / project) di atas list.
+8. Export detail: **Reports → Operational tickets**.
 
-Data mengikuti **company aktif** (multi-company switcher).
+Data mengikuti **company aktif** (multi-company switcher). **SYS_ADMIN** tidak punya switcher — lihat semua tenant; untuk create personil/project yang butuh client context, gunakan user PM/Lead dengan membership, atau pastikan membership di Access.
 
 ### 3.13 Reports (`/reports`)
 
@@ -315,13 +316,35 @@ Admin dapat menguji koneksi dan menyimpan config; secret disembunyikan untuk non
 
 **Alur verify Jira personil**
 
-1. Admin isi **Client Jira** untuk company aktif (atau global Jira) → **Test** sampai SUCCESS (boleh tanpa toggle Enabled).
-2. Di Personnel, isi / link email Jira developer (**Test/Link** memakai kredensial client/global; Enabled tidak wajib).
+1. Admin isi **Client Jira** untuk company (atau global Jira) → **Test** sampai SUCCESS (boleh tanpa toggle Enabled).
+2. Di Personnel (company yang sama), isi / link email Jira developer → **Test/Link**.
 3. Portal memanggil Jira user search; jika ketemu, status **Verified** + `accountId` tersimpan.
-4. **Enabled** (global atau client) diperlukan hanya untuk **push** tiket portal → Jira.
-5. **Import from Jira** (pull) memakai kredensial client/global + project key override; Enabled tidak wajib.
-6. **Scheduled pull** (opsional) — tiap **15 menit** menarik issue Jira → tiket portal untuk **setiap company yang punya Client Jira** (semua project portal aktif di company itu). Issue baru di-import; yang sudah linked di-update (title/status/description). Aktifkan dengan `JIRA_PULL_SCHEDULER=true` (in-process) atau cron eksternal ke `GET/POST /api/cron/jira-pull` + header `Authorization: Bearer $CRON_SECRET`. Tombol **Pull all companies now** di Integrations untuk uji manual.
-7. Tanpa kredensial Jira (atau token kosong), link / import ditolak dengan pesan error yang jelas.
+4. Banyak user portal **tidak wajib** punya seat Jira — kosongkan email Jira jika license terbatas (cukup 1 service account di Client Jira).
+5. **Enabled** (global atau client) diperlukan hanya untuk **push** tiket portal → Jira.
+6. Tanpa kredensial / token invalid → Test/Link/import gagal dengan pesan jelas.
+
+#### Scheduled pull (Jira → portal)
+
+Otomatis menarik issue dari Jira ke tiket portal untuk **setiap company yang punya baris Client Jira tersimpan**, lalu ke **setiap project portal aktif** di company itu.
+
+| Aspek | Perilaku |
+| --- | --- |
+| Interval | Default **15 menit** (`JIRA_PULL_INTERVAL_MS=900000`) |
+| Scope | Hanya company dengan **Client Jira** (bukan fallback global saja) |
+| Issue baru | Di-create di portal (`syncStatus=SYNCED`, key tersimpan) |
+| Issue existing | Title / description / status di-update bila berubah |
+| Assignee | Cocokkan `jiraAccountId` / email personil Verified; else reporter free-text |
+| Attribution | `createdBy` = SYS_ADMIN aktif pertama |
+
+**Cara aktifkan**
+
+1. **In-process** (satu instance Node): di `.env` set `JIRA_PULL_SCHEDULER=true`, restart app. Log: `[jira-pull] scheduler started`.
+2. **Cron eksternal** (disarankan multi-instance):  
+   `curl -H "Authorization: Bearer $CRON_SECRET" https://<host>/api/cron/jira-pull`  
+   tiap 15 menit (crontab / systemd timer).
+3. **Manual:** Integrations → Client Jira → **Pull all companies now** (SYS_ADMIN).
+
+Hasil pull terakhir ikut tercatat di pesan Client Jira (`lastTestMessage` berisi ringkasan scheduled pull).
 
 ---
 
@@ -358,7 +381,7 @@ Admin dapat menguji koneksi dan menyimpan config; secret disembunyikan untuk non
 ### 4.5 Governance mingguan / bulanan
 
 1. **Dashboard** & **Capacity** — siapa over/under capacity, antrean SLA.
-2. **Tickets** — ringkasan bulanan per kategori/project; **Import from Jira** atau sync push bila perlu.
+2. **Tickets** — ringkasan bulanan; Import / scheduled pull dari Jira; sync push bila Enabled.
 3. **Reports** — export (timesheet, leave, OT, evaluations, tickets, …) untuk meeting.
 4. **Leaderboard** — pantau performa & reward.
 
@@ -385,13 +408,17 @@ Admin dapat menguji koneksi dan menyimpan config; secret disembunyikan untuk non
 | Login gagal | User nonaktif / password salah / DB down | Cek Access; password demo `password123`; `docker compose up -d` |
 | Data “kosong” setelah ganti company | Scope tenant aktif | Normal — switch kembali / pastikan membership di Access |
 | Tickets error `findMany` | Prisma client stale setelah schema change | Restart `npm run dev` (lihat `src/lib/prisma.ts`) |
-| Integrations: `ClientJiraConfig` does not exist | Code sudah deploy, DB belum di-`db push` | Di server production: `npx prisma db push` lalu restart app (`npm run start` / PM2 / Docker) |
-| Jira Test / Save “credentials incomplete” | Config belum di-Save / API token kosong | Save dulu (Test sekarang auto-Save); paste API token Atlassian |
-| Jira push sync tiket gagal | Integrasi Jira **Enabled** off / token invalid | Nyalakan Enabled + Test Jira; tiket tetap tersimpan di portal |
-| Edit tiket portal tidak ubah Jira | Sebelumnya belum ada push-on-update; atau Enabled off / role tanpa sync | Pastikan Enabled on; Save edit (auto-push) atau ikon refresh; Admin/PM/Lead/AM |
-| Jira Import from Jira kosong / gagal | Kredensial belum valid / project Jira kosong | Integrations → Test; cek project key; coba max issues lebih besar |
-| Jira link personil gagal | Email tidak ketemu di Jira Cloud | Cek email & permission browse-users service account |
-| Client context required (Add personnel) | SYS_ADMIN tanpa company aktif | Pilih client di switcher pojok atas |
+| Integrations: `ClientJiraConfig` does not exist | Code sudah deploy, DB belum di-`db push` | Di server: `npx prisma db push` lalu restart app |
+| Jira Test / Save “credentials incomplete” | Config belum di-Save / API token kosong | Save dulu (Test auto-Save); paste API token Atlassian |
+| Jira auth 401 | Email + token tidak cocok / token salah site | Buat API token baru di akun email yang sama, Save + Test |
+| Jira push sync tiket gagal | **Enabled** off / token invalid | Nyalakan Enabled (global atau Client Jira) + Test |
+| Edit tiket portal tidak ubah Jira | Enabled off / role tanpa sync | Enabled on; Save edit atau ikon refresh; Admin/PM/Lead/AM |
+| Jira Import / scheduled pull kosong | Belum ada Client Jira / project portal / issue | Simpan Client Jira; buat project aktif; cek project key |
+| Scheduled pull tidak jalan | `JIRA_PULL_SCHEDULER` off / app multi-instance | Set env + restart, atau cron ke `/api/cron/jira-pull` + `CRON_SECRET` |
+| Cron 401 Unauthorized | Secret salah / belum di-set | Samakan `CRON_SECRET` di env dan header `Authorization: Bearer …` |
+| Jira link personil gagal | Email tidak ada di site itu / tanpa browse-users | Invite user ke Jira, atau kosongkan email (license terbatas) |
+| Client context required (Add personnel) | SYS_ADMIN tanpa company aktif | Pakai PM/Lead dengan membership, atau assign membership di Access |
+| Switch company tidak muncul | SYS_ADMIN / user hanya 1 membership | Normal — switcher hanya jika ≥2 membership (bukan Admin) |
 
 ---
 
@@ -412,7 +439,10 @@ Admin dapat menguji koneksi dan menyimpan config; secret disembunyikan untuk non
 - Effective roles / body shopping: `src/lib/effective-roles.ts`
 - Multi-company membership: `src/lib/client-membership.ts`, `ClientMembership` di Prisma
 - Prisma singleton (dev): `src/lib/prisma.ts`
+- Jira client (load per client/project): `src/lib/jira/client.ts`
+- Scheduled pull: `src/lib/jira/scheduled-pull.ts`, `src/lib/jira/pull-scheduler.ts`, `src/instrumentation.ts`
+- Cron HTTP: `src/app/api/cron/jira-pull/route.ts`
 
 ---
 
-*Dokumen ini mengikuti perilaku aplikasi terkini (dashboard, multi-company, tickets, OT eligibility). Sync ulang matrix dengan README jika permission berubah.*
+*Dokumen ini mengikuti perilaku aplikasi terkini (dashboard, multi-company, Client Jira, tickets push/pull, scheduled pull 15m, OT eligibility). Sync ulang matrix dengan README jika permission berubah.*
